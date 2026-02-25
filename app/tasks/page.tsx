@@ -23,11 +23,48 @@ export default function TasksPage() {
   const [viewMode, setViewMode] =
     useState<"my" | "assigned" | "all">("all");
 
+  const [mounted, setMounted] = useState(false);
+
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  console.log("=== TASKS PAGE RENDER ===");
+  console.log("mounted:", mounted);
+  console.log("currentProjectId:", currentProjectId);
+  console.log("currentUser:", currentUser);
+  console.log("tasks length:", tasks?.length);
+  console.log(
+    "tasks ids preview:",
+    (tasks || []).map((t: any) => ({
+      title: t.title,
+      id: t.id,
+      _id: t._id,
+      projectId: t.projectId,
+      parentId: t.parentId,
+      status: t.status,
+    }))
+  );
+
+  useEffect(() => {
+    console.log("useEffect currentProjectId:", currentProjectId, "mounted:", mounted);
+    if (!mounted) return;
+
     if (!currentProjectId) {
+      console.log("No currentProjectId -> redirect /projects");
       router.push("/projects");
     }
-  }, [currentProjectId, router]);
+  }, [mounted, currentProjectId, router]);
+
+
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-white">
+        Loading...
+      </div>
+    );
+  }
 
   if (!currentProjectId) {
     return (
@@ -37,156 +74,249 @@ export default function TasksPage() {
     );
   }
 
-  const activeProject = projects.find(
-    (p) => p.id === currentProjectId
-  );
+  const activeProject = projects.find((p: any) => p.id === currentProjectId);
+  console.log("activeProject:", activeProject);
 
   const sortByDate = (a: any, b: any) =>
-    new Date(a.dueDate).getTime() -
-    new Date(b.dueDate).getTime();
+    new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+
+ 
+  const getComputedStatus = (
+    item: any,
+    allTasks: any[]
+  ): "Not Started" | "In Progress" | "On Hold" | "Complete" => {
+    const itemKey = String(item?.id || item?._id || "");
+
+    const children = (allTasks || []).filter(
+      (t: any) =>
+        String(t.parentId || "") === itemKey &&
+        String(t.projectId) === String(item.projectId)
+    );
+
+
+    if (children.length === 0) {
+      return (item.status || "Not Started") as any;
+    }
+
+    const childStatuses = children.map((child: any) =>
+      getComputedStatus(child, allTasks)
+    );
+
+
+    if (childStatuses.every((s) => s === "Complete")) return "Complete";
+
+    
+    if (childStatuses.some((s) => s === "On Hold")) return "On Hold";
+
+   
+    if (childStatuses.some((s) => s === "In Progress" || s === "Complete")) {
+      return "In Progress";
+    }
+
+    return (item.status || "Not Started") as any;
+  };
 
   const projectTasks = tasks.filter(
-    (task) => task.projectId === currentProjectId
+    (task: any) => String(task.projectId) === String(currentProjectId)
+  );
+  console.log("projectTasks length:", projectTasks.length);
+  console.log(
+    "projectTasks ids:",
+    projectTasks.map((t: any) => ({
+      title: t.title,
+      id: t.id,
+      _id: t._id,
+      status: t.status,
+      computedStatus: getComputedStatus(t, tasks || []),
+    }))
   );
 
   /* 🔥 FILTER LOGIC */
-  const filteredTasks = projectTasks.filter((task) => {
+  const filteredTasks = projectTasks.filter((task: any) => {
     if (!currentUser) return false;
 
     if (viewMode === "all") {
       return (
-        task.assigneeId === currentUser._id ||
-        task.createdById === currentUser._id
+        String(task.assigneeId) === String(currentUser._id) ||
+        String(task.createdById) === String(currentUser._id)
       );
     }
 
     if (viewMode === "my") {
-      return task.assigneeId === currentUser._id;
+      return String(task.assigneeId) === String(currentUser._id);
     }
 
     if (viewMode === "assigned") {
-      return task.createdById === currentUser._id;
+      return String(task.createdById) === String(currentUser._id);
     }
 
     return false;
   });
 
+  console.log("viewMode:", viewMode);
+  console.log("filteredTasks length:", filteredTasks.length);
+  console.log(
+    "filteredTasks ids:",
+    filteredTasks.map((t: any) => ({
+      title: t.title,
+      id: t.id,
+      _id: t._id,
+      status: t.status,
+      computedStatus: getComputedStatus(t, tasks || []),
+      assigneeId: t.assigneeId,
+      createdById: t.createdById,
+    }))
+  );
+
   /* 🔥 ACTIVE & HISTORY */
-const activeTasks = filteredTasks.filter((task) => {
-  const subtasks = tasks.filter(
-    (t) =>
-      t.parentId === task.id &&
-      t.projectId === currentProjectId
-  );
+  const activeTasks = filteredTasks.filter((task: any) => {
+    const parentKey = task.id || task._id;
 
-  const total = subtasks.length;
-  const completed = subtasks.filter(
-    (st) => st.status === "Complete"
-  ).length;
+    const subtasks = tasks.filter(
+      (t: any) =>
+        String(t.parentId) === String(parentKey) &&
+        String(t.projectId) === String(currentProjectId)
+    );
 
-  const progress =
-    total > 0 ? (completed / total) * 100 : 0;
+    const total = subtasks.length;
 
-  return task.status !== "Complete" && progress < 100;
-});
+  
+    const completed = subtasks.filter(
+      (st: any) => getComputedStatus(st, tasks || []) === "Complete"
+    ).length;
 
-const historyTasks = filteredTasks.filter((task) => {
-  const subtasks = tasks.filter(
-    (t) =>
-      t.parentId === task.id &&
-      t.projectId === currentProjectId
-  );
+    const progress = total > 0 ? (completed / total) * 100 : 0;
 
-  const total = subtasks.length;
-  const completed = subtasks.filter(
-    (st) => st.status === "Complete"
-  ).length;
+  
+    const displayedStatus = getComputedStatus(task, tasks || []);
 
-  const progress =
-    total > 0 ? (completed / total) * 100 : 0;
+    return displayedStatus !== "Complete" && progress < 100;
+  });
 
-  return task.status === "Complete" || progress === 100;
-});
+  const historyTasks = filteredTasks.filter((task: any) => {
+    const parentKey = task.id || task._id;
 
+    const subtasks = tasks.filter(
+      (t: any) =>
+        String(t.parentId) === String(parentKey) &&
+        String(t.projectId) === String(currentProjectId)
+    );
 
-  /* 🔥 PRIORITY GROUPS — FIXED */
-  const high = activeTasks
-    .filter((t) => t.priority === "High")
-    .sort(sortByDate);
+    const total = subtasks.length;
 
-  const medium = activeTasks
-    .filter((t) => t.priority === "Medium")
-    .sort(sortByDate);
+    
+    const completed = subtasks.filter(
+      (st: any) => getComputedStatus(st, tasks || []) === "Complete"
+    ).length;
 
-  const low = activeTasks
-    .filter((t) => t.priority === "Low")
-    .sort(sortByDate);
+    const progress = total > 0 ? (completed / total) * 100 : 0;
 
-  const renderGroup = (
-    title: string,
-    color: string,
-    list: any[]
-  ) => {
+    const displayedStatus = getComputedStatus(task, tasks || []);
+
+    return displayedStatus === "Complete" || progress === 100;
+  });
+
+  console.log("activeTasks length:", activeTasks.length);
+  console.log("historyTasks length:", historyTasks.length);
+
+  const high = activeTasks.filter((t: any) => t.priority === "High").sort(sortByDate);
+  const medium = activeTasks.filter((t: any) => t.priority === "Medium").sort(sortByDate);
+  const low = activeTasks.filter((t: any) => t.priority === "Low").sort(sortByDate);
+
+  console.log("high length:", high.length);
+  console.log("medium length:", medium.length);
+  console.log("low length:", low.length);
+
+  const renderGroup = (title: string, color: string, list: any[]) => {
     if (list.length === 0) return null;
 
     return (
       <div className="mb-12">
-        <h2 className={`text-xl font-bold mb-4 ${color}`}>
-          {title}
-        </h2>
+        <h2 className={`text-xl font-bold mb-4 ${color}`}>{title}</h2>
 
         <div className="space-y-4">
-          {list.map((task) => {
+          {list.map((task: any, index: number) => {
+            const taskId = task.id || task._id;
+
+            console.log(`[${title}] task`, {
+              index,
+              title: task.title,
+              id: task.id,
+              _id: task._id,
+              taskId,
+              status: task.status,
+              computedStatus: getComputedStatus(task, tasks || []),
+              projectId: task.projectId,
+            });
+
             const blocked = procurementItems.some(
-              (p) =>
-                p.relatedTaskId === task.id &&
+              (p: any) =>
+                String(p.relatedTaskId) === String(taskId) &&
                 p.status !== "Delivered"
             );
 
             const delayRisk = predictDelay(task, reports);
 
-            const assignee = users.find(
-              (u) => u._id === task.assigneeId
-            );
+            const assignee = users.find((u: any) => String(u._id) === String(task.assigneeId));
 
             /* 🔥 SUBTASK PROGRESS */
             const subtasks = tasks.filter(
-              (t) =>
-                t.parentId === task.id &&
-                t.projectId === currentProjectId
+              (t: any) =>
+                String(t.parentId) === String(taskId) &&
+                String(t.projectId) === String(currentProjectId)
             );
 
             const totalSubtasks = subtasks.length;
 
+          
             const completedSubtasks = subtasks.filter(
-              (st) => st.status === "Complete"
+              (st: any) => getComputedStatus(st, tasks || []) === "Complete"
             ).length;
 
             const progress =
               totalSubtasks > 0
-                ? Math.round(
-                    (completedSubtasks / totalSubtasks) * 100
-                  )
+                ? Math.round((completedSubtasks / totalSubtasks) * 100)
                 : 0;
+
+          
+            const computedTaskStatus = getComputedStatus(task, tasks || []);
+            const rawTaskStatus = task.status || "Not Started";
 
             return (
               <div
-               key={task.id || task._id}
-                onClick={() =>
-                  task.status !== "Complete" &&
-               task.id && router.push(`/tasks/${task.id}`)
-                }
+                key={(taskId || `${task.title}-${task.dueDate}-${index}`) as string}
+                onClick={() => {
+                  console.log("=== TASK CARD CLICK ===");
+                  console.log("Clicked task object:", task);
+                  console.log("Clicked task.id:", task.id);
+                  console.log("Clicked task._id:", task._id);
+                  console.log("Computed taskId:", taskId);
+                  console.log("task.status:", task.status);
+                  console.log("task.computedStatus:", computedTaskStatus);
+                  console.log("Target URL:", `/tasks/${taskId}`);
+
+                  if (!taskId) {
+                    console.log("ABORT: taskId missing");
+                    return;
+                  }
+
+               
+                  if (computedTaskStatus !== "Complete") {
+                    console.log("Navigating to task details...");
+                    router.push(`/tasks/${taskId}`);
+                  } else {
+                    console.log("Blocked navigation because task is Complete (computed)");
+                  }
+                }}
                 className={`bg-[#111827] border p-5 rounded-2xl shadow-lg transition-all duration-200
                   ${
-                    task.status === "Complete"
+                    computedTaskStatus === "Complete"
                       ? "border-gray-700 opacity-50 grayscale cursor-not-allowed"
                       : "border-gray-800 cursor-pointer hover:border-blue-500 hover:scale-[1.01]"
                   }`}
               >
                 <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold">
-                    {task.title}
-                  </h3>
+                  <h3 className="text-lg font-semibold">{task.title}</h3>
 
                   {blocked && (
                     <span className="text-red-500 text-xs">
@@ -200,29 +330,33 @@ const historyTasks = filteredTasks.filter((task) => {
                 </div>
 
                 <div className="text-sm text-gray-500 mt-2">
-                  Due:{" "}
-                  {new Date(
-                    task.dueDate
-                  ).toLocaleDateString()}
+                  Due: {new Date(task.dueDate).toLocaleDateString()}
+                </div>
+
+              
+                <div className="text-sm mt-2">
+                  Status:{" "}
+                  <span className="font-medium text-gray-300">
+                    {computedTaskStatus}
+                  </span>
+                  {computedTaskStatus !== rawTaskStatus && (
+                    <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300">
+                      auto
+                    </span>
+                  )}
                 </div>
 
                 {totalSubtasks > 0 ? (
                   <div className="mt-6 flex flex-col items-center">
                     <div className="flex justify-between w-2/3 text-xs mb-2">
-                      <span className="text-gray-400">
-                        Progress
-                      </span>
-                      <span className="font-bold text-blue-400">
-                        {progress}%
-                      </span>
+                      <span className="text-gray-400">Progress</span>
+                      <span className="font-bold text-blue-400">{progress}%</span>
                     </div>
 
                     <div className="w-2/3 bg-gray-800 rounded-full h-3 overflow-hidden">
                       <div
                         className="h-3 rounded-full bg-green-500 transition-all duration-300"
-                        style={{
-                          width: `${progress}%`,
-                        }}
+                        style={{ width: `${progress}%` }}
                       />
                     </div>
 
@@ -230,9 +364,7 @@ const historyTasks = filteredTasks.filter((task) => {
                       {completedSubtasks} / {totalSubtasks} completed
                     </div>
 
-                    <div className="text-sm mt-2">
-                      🔮 Delay Risk: {delayRisk}
-                    </div>
+                    <div className="text-sm mt-2">🔮 Delay Risk: {delayRisk}</div>
                   </div>
                 ) : (
                   <div className="mt-6 text-center">
@@ -251,29 +383,35 @@ const historyTasks = filteredTasks.filter((task) => {
 
   return (
     <div className="min-h-screen bg-[#0b1220] text-white p-8">
-
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">
-          Task Control Center
-        </h1>
+        <h1 className="text-2xl font-bold">Task Control Center</h1>
 
         <div className="flex gap-4">
           <button
-            onClick={() => setViewMode("all")}
+            onClick={() => {
+              console.log("Switch viewMode -> all");
+              setViewMode("all");
+            }}
             className="bg-gray-600 px-4 py-2 rounded-lg"
           >
             All
           </button>
 
           <button
-            onClick={() => setViewMode("my")}
+            onClick={() => {
+              console.log("Switch viewMode -> my");
+              setViewMode("my");
+            }}
             className="bg-blue-600 px-4 py-2 rounded-lg"
           >
             My Tasks
           </button>
 
           <button
-            onClick={() => setViewMode("assigned")}
+            onClick={() => {
+              console.log("Switch viewMode -> assigned");
+              setViewMode("assigned");
+            }}
             className="bg-purple-600 px-4 py-2 rounded-lg"
           >
             Assigned by Me
@@ -308,28 +446,40 @@ const historyTasks = filteredTasks.filter((task) => {
       {renderGroup("MEDIUM PRIORITY", "text-green-400", medium)}
       {renderGroup("LOW PRIORITY", "text-yellow-400", low)}
 
-      {/* 🔥 HISTORY */}
       {historyTasks.length > 0 && (
         <div className="mt-16">
-          <h2 className="text-xl font-bold text-gray-500 mb-6">
-            History
-          </h2>
+          <h2 className="text-xl font-bold text-gray-500 mb-6">History</h2>
 
           <div className="space-y-4">
-            {historyTasks.map((task) => (
-              <div
-                key={task.id }
-                className="bg-[#1a1f2e] border border-gray-700 p-5 rounded-2xl opacity-60 grayscale cursor-not-allowed"
-              >
-                <h3 className="text-lg font-semibold text-gray-400">
-                  {task.title}
-                </h3>
+            {historyTasks.map((task: any, index: number) => {
+              const taskId = task.id || task._id;
+              const computedTaskStatus = getComputedStatus(task, tasks || []);
 
-                <p className="text-sm text-gray-500 mt-2">
-                  Completed
-                </p>
-              </div>
-            ))}
+              console.log("[HISTORY TASK]", {
+                index,
+                title: task.title,
+                id: task.id,
+                _id: task._id,
+                taskId,
+                status: task.status,
+                computedStatus: computedTaskStatus,
+              });
+
+              return (
+                <div
+                  key={(taskId || `${task.title}-${task.dueDate}-${index}`) as string}
+                  className="bg-[#1a1f2e] border border-gray-700 p-5 rounded-2xl opacity-60 grayscale cursor-not-allowed"
+                >
+                  <h3 className="text-lg font-semibold text-gray-400">
+                    {task.title}
+                  </h3>
+
+                  <p className="text-sm text-gray-500 mt-2">
+                    {computedTaskStatus === "Complete" ? "Completed" : computedTaskStatus}
+                  </p>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
