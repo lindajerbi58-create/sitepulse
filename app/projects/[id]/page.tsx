@@ -55,21 +55,21 @@ export default function ProjectDetailsPage() {
           </p>
         )}
 
-        <div className="space-y-4">
-          {projectTasks.map((task) => (
-            <div
-              key={task.id}
-              className="bg-[#111827] p-4 rounded-xl border border-gray-800"
-            >
-              <h2 className="font-semibold">
-                {task.title}
-              </h2>
-              <p className="text-sm text-gray-400">
-                Progress: {task.progress || 0}%
-              </p>
-            </div>
-          ))}
-        </div>
+      <div className="space-y-4">
+  {projectTasks.map((task, index) => (
+    <div
+      key={`${String(task.id  || "task")}-${index}`}
+      className="bg-[#111827] p-4 rounded-xl border border-gray-800"
+    >
+      <h2 className="font-semibold">
+        {task.title}
+      </h2>
+      <p className="text-sm text-gray-400">
+        Progress: {task.progress || 0}%
+      </p>
+    </div>
+  ))}
+</div>
 
       </div>
     </div>
