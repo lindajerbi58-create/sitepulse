@@ -3,65 +3,177 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useTaskStore } from "@/store/useTaskStore";
 import { useUserStore } from "@/store/useUserStore";
-import { useDailyReportStore } from "@/store/useDailyReportStore";
-import { useProcurementStore } from "@/store/useProcurementStore";
-import { useProjectStore } from "@/store/useProjectStore";
 import { predictDelay } from "@/lib/delayPredictor";
+
+type TaskStatus = "Not Started" | "In Progress" | "On Hold" | "Complete";
+
+type Task = {
+  _id?: string;
+  id?: string;
+  title?: string;
+  description?: string;
+  projectId?: string;
+  parentId?: string | null;
+  assigneeId?: string | { _id?: string; id?: string } | null;
+  createdById?: string | { _id?: string; id?: string } | null;
+  status?: TaskStatus | string;
+  priority?: "Low" | "Medium" | "High" | string;
+  dueDate?: string;
+  progress?: number;
+  totalTarget?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type User = {
+  _id?: string;
+  id?: string;
+  fullName?: string;
+  role?: string;
+  reportsTo?: string | { _id?: string; id?: string } | null;
+  department?: string;
+};
+
+type Report = {
+  _id?: string;
+  id?: string;
+  createdAt?: string;
+  date?: string;
+  userId?: string | { _id?: string; id?: string } | null;
+  targetQuantity?: number;
+  actualQuantity?: number;
+};
+
+type ProcurementItem = {
+  _id?: string;
+  id?: string;
+  relatedTaskId?: string | { _id?: string; id?: string } | null;
+  status?: string;
+};
+
+type Project = {
+  _id?: string;
+  id?: string;
+  name?: string;
+  description?: string;
+  status?: string;
+};
+
+type HistoryItem = {
+  type: "created" | "updated" | "subtask";
+  label: string;
+  date: Date;
+  userId?: string;
+  href?: string;
+};
 
 export default function TaskDetailsPage() {
   const router = useRouter();
   const params = useParams();
-
-  // ✅ keep everything + add addTask if available in your store
-  const taskStore: any = useTaskStore();
-  const { tasks } = taskStore;
-  const addTask = taskStore?.addTask; // if your store has addTask()
-
-  const { users } = useUserStore();
   const currentUser = useUserStore((state: any) => state.currentUser);
 
-  const { reports } = useDailyReportStore();
-  const { items: procurementItems } = useProcurementStore();
-  const { currentProjectId, projects } = useProjectStore();
+  const routeTaskId = String((params as any)?.id || "");
 
   const [mounted, setMounted] = useState(false);
 
-  // ✅ Subtask form states (ADDED)
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [procurementItems, setProcurementItems] = useState<ProcurementItem[]>(
+    []
+  );
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [pageError, setPageError] = useState("");
+
   const [subtaskTitle, setSubtaskTitle] = useState("");
   const [subtaskDescription, setSubtaskDescription] = useState("");
   const [subtaskAssigneeId, setSubtaskAssigneeId] = useState("");
   const [subtaskDueDate, setSubtaskDueDate] = useState("");
-  const [subtaskPriority, setSubtaskPriority] = useState<"Low" | "Medium" | "High">("Medium");
-  const [subtaskStatus, setSubtaskStatus] = useState<"Not Started" | "In Progress" | "On Hold" | "Complete">("Not Started");
+  const [subtaskPriority, setSubtaskPriority] = useState<
+    "Low" | "Medium" | "High"
+  >("Medium");
+  const [subtaskStatus, setSubtaskStatus] = useState<
+    "Not Started" | "In Progress" | "On Hold" | "Complete"
+  >("Not Started");
   const [subtaskError, setSubtaskError] = useState("");
   const [subtaskSuccess, setSubtaskSuccess] = useState("");
+  const [subtaskSaving, setSubtaskSaving] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const routeTaskId = String((params as any)?.id || "");
+  const normalizeId = (value: any) =>
+    String(value?._id || value?.id || value || "");
 
-  console.log("=== TASK DETAILS PAGE RENDER ===");
-  console.log("mounted:", mounted);
-  console.log("params:", params);
-  console.log("routeTaskId:", routeTaskId);
-  console.log("currentProjectId:", currentProjectId);
-  console.log("currentUser:", currentUser);
-  console.log("tasks length:", tasks?.length);
-  console.log(
-    "tasks ids preview:",
-    (tasks || []).map((t: any) => ({
-      title: t.title,
-      id: t.id,
-      _id: t._id,
-      projectId: t.projectId,
-      parentId: t.parentId,
-      status: t.status,
-    }))
-  );
+  const safeDate = (value: any) => {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
+  const todayInputValue = new Date().toISOString().split("T")[0];
+
+  const loadAllData = async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      setPageError("");
+
+      const [tasksRes, usersRes, dailyRes, procurementRes, projectsRes] =
+        await Promise.all([
+          fetch("/api/tasks", { cache: "no-store" }),
+          fetch("/api/users", { cache: "no-store" }),
+          fetch("/api/daily", { cache: "no-store" }),
+          fetch("/api/procurement", { cache: "no-store" }),
+          fetch("/api/projects", { cache: "no-store" }),
+        ]);
+
+      if (!tasksRes.ok) throw new Error("Failed to load tasks");
+      if (!usersRes.ok) throw new Error("Failed to load users");
+      if (!dailyRes.ok) throw new Error("Failed to load daily reports");
+      if (!procurementRes.ok) throw new Error("Failed to load procurement");
+      if (!projectsRes.ok) throw new Error("Failed to load projects");
+
+      const [tasksData, usersData, dailyData, procurementData, projectsData] =
+        await Promise.all([
+          tasksRes.json(),
+          usersRes.json(),
+          dailyRes.json(),
+          procurementRes.json(),
+          projectsRes.json(),
+        ]);
+
+      setTasks(Array.isArray(tasksData) ? tasksData : []);
+      setUsers(Array.isArray(usersData) ? usersData : []);
+      setReports(Array.isArray(dailyData) ? dailyData : []);
+      setProcurementItems(Array.isArray(procurementData) ? procurementData : []);
+      setProjects(Array.isArray(projectsData) ? projectsData : []);
+    } catch (error: any) {
+      console.error("TaskDetails loadAllData error:", error);
+      setPageError(error?.message || "Unable to load task details.");
+      setTasks([]);
+      setUsers([]);
+      setReports([]);
+      setProcurementItems([]);
+      setProjects([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!mounted) return;
+    loadAllData();
+  }, [mounted]);
 
   const task = useMemo(() => {
     return (tasks || []).find(
@@ -69,24 +181,37 @@ export default function TaskDetailsPage() {
     );
   }, [tasks, routeTaskId]);
 
-  console.log("found task:", task);
-
-  // ✅ ADDED: recursive computed status (task/subtask/sub-subtask...)
-  const getComputedStatus = (item: any, allTasks: any[]): "Not Started" | "In Progress" | "On Hold" | "Complete" => {
+  const getComputedStatus = (
+    item: any,
+    allTasks: any[],
+    visited = new Set<string>()
+  ): "Not Started" | "In Progress" | "On Hold" | "Complete" => {
     const itemKey = String(item?.id || item?._id || "");
+
+    if (!itemKey) {
+      return (item.status || "Not Started") as any;
+    }
+
+    if (visited.has(itemKey)) {
+      return (item.status || "Not Started") as any;
+    }
+
+    const nextVisited = new Set(visited);
+    nextVisited.add(itemKey);
 
     const children = (allTasks || []).filter(
       (t: any) =>
         String(t.parentId || "") === itemKey &&
-        String(t.projectId) === String(item.projectId)
+        String(t.projectId || "") === String(item.projectId || "")
     );
 
-    // no children => return real status
     if (children.length === 0) {
       return (item.status || "Not Started") as any;
     }
 
-    const childStatuses = children.map((child: any) => getComputedStatus(child, allTasks));
+    const childStatuses = children.map((child: any) =>
+      getComputedStatus(child, allTasks, nextVisited)
+    );
 
     const allComplete = childStatuses.every((s) => s === "Complete");
     if (allComplete) return "Complete";
@@ -102,87 +227,169 @@ export default function TaskDetailsPage() {
   };
 
   const assignee = task
-    ? users.find((u: any) => String(u._id || u.id) === String(task.assigneeId))
+    ? users.find((u: any) => normalizeId(u) === normalizeId(task.assigneeId))
     : null;
 
   const creator = task
-    ? users.find((u: any) => String(u._id || u.id) === String(task.createdById))
+    ? users.find((u: any) => normalizeId(u) === normalizeId(task.createdById))
     : null;
 
   const activeProject = task
-    ? projects.find((p: any) => String(p.id) === String(task.projectId))
+    ? projects.find((p: any) => normalizeId(p) === String(task.projectId || ""))
     : null;
 
-  // ✅ FIXED id/_id comparison (kept your logic, corrected _id usage)
   const blocked = task
     ? procurementItems.some(
         (p: any) =>
-          String(p.relatedTaskId) === String(task.id || task._id) &&
-          p.status !== "Delivered"
+          normalizeId(p.relatedTaskId) === String(task.id || task._id) &&
+          String(p.status || "") !== "Delivered"
       )
     : false;
 
   const delayRisk = task ? predictDelay(task, reports) : "N/A";
 
-  // ✅ FIXED id/_id comparison for subtasks
   const subtasks = task
     ? tasks.filter(
         (t: any) =>
-          String(t.parentId) === String(task.id || task._id) &&
-          String(t.projectId) === String(task.projectId)
+          String(t.parentId || "") === String(task.id || task._id) &&
+          String(t.projectId || "") === String(task.projectId || "")
       )
     : [];
 
-  // ✅ CHANGED: progress based on computed status (recursive)
   const completedSubtasks = subtasks.filter(
     (st: any) => getComputedStatus(st, tasks || []) === "Complete"
   ).length;
 
+  const averageSubtaskProgress = useMemo(() => {
+    if (!subtasks.length) return null;
+
+    const total = subtasks.reduce((sum: number, st: any) => {
+      const computed = getComputedStatus(st, tasks || []);
+      if (computed === "Complete") return sum + 100;
+
+      const rawProgress = Number(st.progress || 0);
+      return sum + Math.min(Math.max(rawProgress, 0), 100);
+    }, 0);
+
+    return Math.round(total / subtasks.length);
+  }, [subtasks, tasks]);
+
   const progress =
-    subtasks.length > 0 ? Math.round((completedSubtasks / subtasks.length) * 100) : 0;
+    subtasks.length > 0
+      ? Number(averageSubtaskProgress || 0)
+      : Number(task?.progress || 0);
 
-  // ✅ ADDED: displayed/computed status of current task itself
-  const computedTaskStatus = task ? getComputedStatus(task, tasks || []) : "Not Started";
+  const computedTaskStatus = task
+    ? getComputedStatus(task, tasks || [])
+    : "Not Started";
 
-  // ✅ TEAM ONLY for subtask assignment (ADDED)
-  // "Son équipe" = me + users who report to me
   const teamMembers = useMemo(() => {
-    if (!users || !currentUser) return [];
+    if (!Array.isArray(users) || !currentUser) return [];
 
-    const result = users.filter((u: any) => {
-      const uid = String(u._id || u.id || "");
-      const me = String(currentUser._id || currentUser.id || "");
-      const reportsTo = String(u.reportsTo || "");
+    const me = String(currentUser._id || currentUser.id || "");
+
+    return users.filter((u: any) => {
+      const uid = String(u?._id || u?.id || "");
+
+      const reportsTo =
+        u?.reportsTo && typeof u.reportsTo === "object"
+          ? String(u.reportsTo?._id || u.reportsTo?.id || "")
+          : String(u?.reportsTo || "");
 
       const isMe = uid === me;
       const reportsToMe = reportsTo === me;
 
-      // optional: same project check if user has projectId
-      // const sameProject = String(u.projectId || "") === String(task?.projectId || "");
-
       return isMe || reportsToMe;
     });
+  }, [users, currentUser]);
 
-    console.log("teamMembers (me + reportsTo):", result);
-    return result;
-  }, [users, currentUser, task]);
+  const canAddSubtask = !!(
+    currentUser &&
+    task &&
+    (normalizeId(task.createdById) ===
+      String(currentUser._id || currentUser.id || "") ||
+      normalizeId(task.assigneeId) ===
+        String(currentUser._id || currentUser.id || ""))
+  );
 
-  // ✅ ADD SUBTASK handler (ADDED)
-  const handleAddSubtask = () => {
+  const historyItems = useMemo(() => {
+    if (!task) return [];
+
+    const items: HistoryItem[] = [];
+
+    if (task.createdAt) {
+      items.push({
+        type: "created",
+        label: "Task created",
+        date: new Date(task.createdAt),
+        userId: normalizeId(task.createdById),
+      });
+    }
+
+    if (task.updatedAt && task.updatedAt !== task.createdAt) {
+      items.push({
+        type: "updated",
+        label: "Task updated",
+        date: new Date(task.updatedAt),
+        userId: normalizeId(task.createdById),
+      });
+    }
+
+    subtasks.forEach((st: any) => {
+      if (st.createdAt) {
+        items.push({
+          type: "subtask",
+          label: `Subtask added: ${st.title || "Untitled subtask"}`,
+          date: new Date(st.createdAt),
+          userId: normalizeId(st.createdById),
+          href: `/tasks/${String(st.id || st._id)}`,
+        });
+      }
+    });
+
+    return items.sort((a, b) => b.date.getTime() - a.date.getTime());
+  }, [task, subtasks]);
+
+  const getStatusBadgeClasses = (status: string) => {
+    switch (status) {
+      case "Complete":
+        return "bg-green-500/20 text-green-300";
+      case "In Progress":
+        return "bg-blue-500/20 text-blue-300";
+      case "On Hold":
+        return "bg-yellow-500/20 text-yellow-300";
+      default:
+        return "bg-gray-500/20 text-gray-300";
+    }
+  };
+
+  const getPriorityBadgeClasses = (priority: string) => {
+    switch (String(priority || "").toLowerCase()) {
+      case "high":
+        return "bg-red-500/20 text-red-300";
+      case "medium":
+        return "bg-orange-500/20 text-orange-300";
+      default:
+        return "bg-green-500/20 text-green-300";
+    }
+  };
+
+  const getDelayRiskBadgeClasses = (risk: string) => {
+    switch (String(risk || "").toLowerCase()) {
+      case "high":
+        return "bg-red-500/20 text-red-300";
+      case "medium":
+        return "bg-orange-500/20 text-orange-300";
+      case "low":
+        return "bg-green-500/20 text-green-300";
+      default:
+        return "bg-gray-500/20 text-gray-300";
+    }
+  };
+
+  const handleAddSubtask = async () => {
     setSubtaskError("");
     setSubtaskSuccess("");
-
-    console.log("=== ADD SUBTASK CLICK ===");
-    console.log("parent task:", task);
-    console.log("currentUser:", currentUser);
-    console.log("subtask form:", {
-      subtaskTitle,
-      subtaskDescription,
-      subtaskAssigneeId,
-      subtaskDueDate,
-      subtaskPriority,
-      subtaskStatus,
-    });
 
     if (!task) {
       setSubtaskError("Parent task not found.");
@@ -191,6 +398,11 @@ export default function TaskDetailsPage() {
 
     if (!currentUser?._id && !currentUser?.id) {
       setSubtaskError("Current user not loaded.");
+      return;
+    }
+
+    if (!canAddSubtask) {
+      setSubtaskError("You are not allowed to add subtasks to this task.");
       return;
     }
 
@@ -209,9 +421,8 @@ export default function TaskDetailsPage() {
       return;
     }
 
-    // ✅ ensure selected assignee is in team only
     const allowed = teamMembers.some(
-      (m: any) => String(m._id || m.id) === String(subtaskAssigneeId)
+      (m: any) => normalizeId(m) === String(subtaskAssigneeId)
     );
 
     if (!allowed) {
@@ -222,12 +433,28 @@ export default function TaskDetailsPage() {
     const parentTaskId = String(task.id || task._id);
     const creatorId = String(currentUser._id || currentUser.id);
 
-    const newSubtask: any = {
-      // include both id and _id compatibility depending on your UI/store usage
-      id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+    const parentDueDate = task?.dueDate ? new Date(task.dueDate) : null;
+    const chosenSubtaskDate = subtaskDueDate ? new Date(subtaskDueDate) : null;
+
+    if (parentDueDate && chosenSubtaskDate && chosenSubtaskDate > parentDueDate) {
+      setSubtaskError(
+        "Subtask due date cannot be later than the parent task due date."
+      );
+      return;
+    }
+
+    const chosenInputDate = new Date(subtaskDueDate);
+    const todayDate = new Date(todayInputValue);
+
+    if (chosenInputDate < todayDate) {
+      setSubtaskError("Subtask due date cannot be in the past.");
+      return;
+    }
+
+    const newSubtask = {
       title: subtaskTitle.trim(),
       description: subtaskDescription.trim(),
-      projectId: String(task.projectId),
+      projectId: String(task.projectId || ""),
       assigneeId: String(subtaskAssigneeId),
       createdById: creatorId,
       dueDate: new Date(subtaskDueDate).toISOString(),
@@ -237,18 +464,23 @@ export default function TaskDetailsPage() {
       progress: 0,
       parentId: parentTaskId,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
-    console.log("newSubtask payload:", newSubtask);
-
     try {
-      if (typeof addTask === "function") {
-        addTask(newSubtask);
-        console.log("Subtask added via useTaskStore.addTask()");
-      } else {
-        console.warn("addTask() not found in useTaskStore. Subtask not persisted.");
-        setSubtaskError("addTask() not found in task store. Please send me your useTaskStore code and I’ll wire it exactly.");
-        return;
+      setSubtaskSaving(true);
+
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newSubtask),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Failed to create subtask: ${text}`);
       }
 
       setSubtaskSuccess("Subtask added successfully ✅");
@@ -258,13 +490,17 @@ export default function TaskDetailsPage() {
       setSubtaskDueDate("");
       setSubtaskPriority("Medium");
       setSubtaskStatus("Not Started");
+
+      await loadAllData(true);
     } catch (error: any) {
       console.error("Add subtask error:", error);
       setSubtaskError(error?.message || "Failed to add subtask.");
+    } finally {
+      setSubtaskSaving(false);
     }
   };
 
-  if (!mounted) {
+  if (!mounted || loading) {
     return (
       <div className="min-h-screen bg-[#0b1220] text-white flex items-center justify-center">
         Loading task details...
@@ -288,12 +524,12 @@ export default function TaskDetailsPage() {
       <div className="min-h-screen bg-[#0b1220] text-white flex flex-col items-center justify-center gap-4 p-6">
         <p className="text-lg font-semibold">Task not found</p>
         <p className="text-sm text-gray-400 text-center">
-          The task may not be loaded yet, or the id does not match.
+          The task may not exist in the database, or the id does not match.
         </p>
 
         <div className="flex gap-3">
           <button
-            onClick={() => router.refresh()}
+            onClick={() => loadAllData(true)}
             className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg"
           >
             Refresh
@@ -312,13 +548,53 @@ export default function TaskDetailsPage() {
 
   return (
     <div className="min-h-screen bg-[#0b1220] text-white p-8">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
         <div>
           <p className="text-sm text-gray-400">Task Details</p>
           <h1 className="text-2xl font-bold mt-1">{task.title}</h1>
+
+          <div className="flex flex-wrap gap-2 mt-3">
+            <span
+              className={`text-xs px-3 py-1 rounded-full ${getStatusBadgeClasses(
+                computedTaskStatus
+              )}`}
+            >
+              {computedTaskStatus}
+            </span>
+
+            <span
+              className={`text-xs px-3 py-1 rounded-full ${getPriorityBadgeClasses(
+                String(task.priority || "Low")
+              )}`}
+            >
+              {task.priority || "No Priority"}
+            </span>
+
+            <span
+              className={`text-xs px-3 py-1 rounded-full ${getDelayRiskBadgeClasses(
+                String(delayRisk)
+              )}`}
+            >
+              Delay Risk: {String(delayRisk)}
+            </span>
+
+            {blocked && (
+              <span className="text-xs px-3 py-1 rounded-full bg-red-500/20 text-red-300">
+                Waiting for Materials
+              </span>
+            )}
+          </div>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => loadAllData(true)}
+            disabled={refreshing}
+            className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg disabled:opacity-50"
+          >
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
+
           <Link
             href="/tasks"
             className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg"
@@ -334,6 +610,12 @@ export default function TaskDetailsPage() {
           </Link>
         </div>
       </div>
+
+      {pageError && (
+        <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          {pageError}
+        </div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-6">
         <div className="bg-[#111827] border border-gray-800 rounded-2xl p-6">
@@ -362,12 +644,14 @@ export default function TaskDetailsPage() {
 
             <p>
               <span className="text-gray-400">Raw Status (stored):</span>{" "}
-              <span className="font-medium text-gray-300">{task.status}</span>
+              <span className="font-medium text-gray-300">
+                {task.status || "Not Started"}
+              </span>
             </p>
 
             <p>
               <span className="text-gray-400">Priority:</span>{" "}
-              <span className="font-medium">{task.priority}</span>
+              <span className="font-medium">{task.priority || "N/A"}</span>
             </p>
 
             <p>
@@ -377,14 +661,30 @@ export default function TaskDetailsPage() {
 
             <p>
               <span className="text-gray-400">Project:</span>{" "}
-              {activeProject?.name || task.projectId}
+              {activeProject?.name || "Unnamed Project"}
             </p>
 
-            {/* ✅ ADDED: show if this task is itself a subtask */}
+            <p>
+              <span className="text-gray-400">Displayed Progress:</span>{" "}
+              <span className="font-medium text-blue-300">{progress}%</span>
+            </p>
+
             {task.parentId && (
               <p>
                 <span className="text-gray-400">Parent Task ID:</span>{" "}
-                <span className="text-cyan-400">{String(task.parentId)}</span>
+                <Link
+                  href={`/tasks/${String(task.parentId)}`}
+                  className="text-cyan-400 hover:text-cyan-300 underline"
+                >
+                  {String(task.parentId)}
+                </Link>
+              </p>
+            )}
+
+            {task.updatedAt && (
+              <p>
+                <span className="text-gray-400">Updated At:</span>{" "}
+                {new Date(task.updatedAt).toLocaleString()}
               </p>
             )}
           </div>
@@ -396,12 +696,12 @@ export default function TaskDetailsPage() {
           <div className="space-y-3 text-sm">
             <p>
               <span className="text-gray-400">Assigned To:</span>{" "}
-              {assignee?.fullName || task.assigneeId}
+              {assignee?.fullName || "Unassigned"}
             </p>
 
             <p>
               <span className="text-gray-400">Created By:</span>{" "}
-              {creator?.fullName || task.createdById}
+              {creator?.fullName || "Unknown"}
             </p>
 
             <p>
@@ -415,20 +715,34 @@ export default function TaskDetailsPage() {
 
             <p>
               <span className="text-gray-400">Delay Risk:</span>{" "}
-              <span>{delayRisk}</span>
+              <span>{String(delayRisk)}</span>
             </p>
 
             <p>
               <span className="text-gray-400">Created At:</span>{" "}
               {task.createdAt ? new Date(task.createdAt).toLocaleString() : "N/A"}
             </p>
+
+            <p>
+              <span className="text-gray-400">Can Add Subtask:</span>{" "}
+              {canAddSubtask ? (
+                <span className="text-green-400">Yes</span>
+              ) : (
+                <span className="text-red-400">No</span>
+              )}
+            </p>
           </div>
         </div>
       </div>
 
-      {/* ✅ ADDED: ADD SUBTASK FORM (kept everything else) */}
       <div className="mt-6 bg-[#111827] border border-gray-800 rounded-2xl p-6">
         <h2 className="text-lg font-semibold mb-4">Add Subtask</h2>
+
+        {!canAddSubtask && (
+          <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-300">
+            You can view this task, but you are not allowed to add subtasks to it.
+          </div>
+        )}
 
         <div className="grid md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
@@ -438,34 +752,46 @@ export default function TaskDetailsPage() {
               value={subtaskTitle}
               onChange={(e) => setSubtaskTitle(e.target.value)}
               placeholder="Enter subtask title"
-              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2 outline-none focus:border-blue-500"
+              disabled={!canAddSubtask || subtaskSaving}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2 outline-none focus:border-blue-500 disabled:opacity-60"
             />
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-sm text-gray-400 mb-2">Description (optional)</label>
+            <label className="block text-sm text-gray-400 mb-2">
+              Description (optional)
+            </label>
             <textarea
               value={subtaskDescription}
               onChange={(e) => setSubtaskDescription(e.target.value)}
               placeholder="Enter subtask description"
               rows={3}
-              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2 outline-none focus:border-blue-500"
+              disabled={!canAddSubtask || subtaskSaving}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2 outline-none focus:border-blue-500 disabled:opacity-60"
             />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Assign to (team only)</label>
+            <label className="block text-sm text-gray-400 mb-2">
+              Assign to (team only)
+            </label>
             <select
               value={subtaskAssigneeId}
               onChange={(e) => setSubtaskAssigneeId(e.target.value)}
-              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2 outline-none focus:border-blue-500"
+              disabled={!canAddSubtask || subtaskSaving}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2 outline-none focus:border-blue-500 disabled:opacity-60"
             >
               <option value="">
-                {teamMembers.length === 0 ? "No team members found" : "Select team member"}
+                {teamMembers.length === 0
+                  ? "No team members found"
+                  : "Select team member"}
               </option>
 
               {teamMembers.map((member: any) => (
-                <option key={String(member._id || member.id)} value={String(member._id || member.id)}>
+                <option
+                  key={String(member._id || member.id)}
+                  value={String(member._id || member.id)}
+                >
                   {member.fullName} {member.role ? `(${member.role})` : ""}
                 </option>
               ))}
@@ -473,7 +799,7 @@ export default function TaskDetailsPage() {
 
             {teamMembers.length === 0 && (
               <p className="text-xs text-yellow-400 mt-2">
-                No team members found from reportsTo. Check users.reportsTo values.
+                No team members found from reportsTo.
               </p>
             )}
           </div>
@@ -484,8 +810,21 @@ export default function TaskDetailsPage() {
               type="date"
               value={subtaskDueDate}
               onChange={(e) => setSubtaskDueDate(e.target.value)}
-              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2 outline-none focus:border-blue-500"
+              min={todayInputValue}
+              max={
+                task?.dueDate
+                  ? new Date(task.dueDate).toISOString().split("T")[0]
+                  : undefined
+              }
+              disabled={!canAddSubtask || subtaskSaving}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2 outline-none focus:border-blue-500 disabled:opacity-60"
             />
+            {task?.dueDate && (
+              <p className="text-xs text-gray-500 mt-2">
+                Must be on or before{" "}
+                {new Date(task.dueDate).toLocaleDateString()}.
+              </p>
+            )}
           </div>
 
           <div>
@@ -493,7 +832,8 @@ export default function TaskDetailsPage() {
             <select
               value={subtaskPriority}
               onChange={(e) => setSubtaskPriority(e.target.value as any)}
-              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2 outline-none focus:border-blue-500"
+              disabled={!canAddSubtask || subtaskSaving}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2 outline-none focus:border-blue-500 disabled:opacity-60"
             >
               <option value="Low">Low</option>
               <option value="Medium">Medium</option>
@@ -502,11 +842,14 @@ export default function TaskDetailsPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Initial Status</label>
+            <label className="block text-sm text-gray-400 mb-2">
+              Initial Status
+            </label>
             <select
               value={subtaskStatus}
               onChange={(e) => setSubtaskStatus(e.target.value as any)}
-              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2 outline-none focus:border-blue-500"
+              disabled={!canAddSubtask || subtaskSaving}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2 outline-none focus:border-blue-500 disabled:opacity-60"
             >
               <option value="Not Started">Not Started</option>
               <option value="In Progress">In Progress</option>
@@ -527,9 +870,10 @@ export default function TaskDetailsPage() {
         <div className="mt-4 flex gap-3">
           <button
             onClick={handleAddSubtask}
-            className="bg-cyan-600 hover:bg-cyan-700 px-4 py-2 rounded-lg"
+            disabled={!canAddSubtask || subtaskSaving}
+            className="bg-cyan-600 hover:bg-cyan-700 px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            + Add Subtask
+            {subtaskSaving ? "Adding..." : "+ Add Subtask"}
           </button>
 
           <button
@@ -543,7 +887,8 @@ export default function TaskDetailsPage() {
               setSubtaskError("");
               setSubtaskSuccess("");
             }}
-            className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg"
+            disabled={subtaskSaving}
+            className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Clear
           </button>
@@ -574,10 +919,9 @@ export default function TaskDetailsPage() {
             <div className="mt-4 space-y-2">
               {subtasks.map((st: any) => {
                 const stAssignee = users.find(
-                  (u: any) => String(u._id || u.id) === String(st.assigneeId)
+                  (u: any) => normalizeId(u) === normalizeId(st.assigneeId)
                 );
 
-                // ✅ ADDED: computed status for display
                 const computedStStatus = getComputedStatus(st, tasks || []);
                 const rawStStatus = st.status || "Not Started";
 
@@ -589,7 +933,7 @@ export default function TaskDetailsPage() {
                     <div>
                       <div className="font-medium">{st.title}</div>
                       <div className="text-xs text-gray-500 mt-1">
-                        Assigned: {stAssignee?.fullName || st.assigneeId}
+                        Assigned: {stAssignee?.fullName || "Unassigned"}
                       </div>
                     </div>
 
@@ -598,9 +942,14 @@ export default function TaskDetailsPage() {
                         Subtask
                       </span>
 
-                      {/* ✅ show computed status */}
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-300">{computedStStatus}</span>
+                        <span
+                          className={`text-xs px-3 py-1 rounded-full ${getStatusBadgeClasses(
+                            computedStStatus
+                          )}`}
+                        >
+                          {computedStStatus}
+                        </span>
                         {computedStStatus !== rawStStatus && (
                           <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300">
                             auto
@@ -608,9 +957,10 @@ export default function TaskDetailsPage() {
                         )}
                       </div>
 
-                      {/* ✅ quick open subtask details */}
                       <button
-                        onClick={() => router.push(`/tasks/${String(st.id || st._id)}`)}
+                        onClick={() =>
+                          router.push(`/tasks/${String(st.id || st._id)}`)
+                        }
                         className="text-xs bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded"
                       >
                         Open
@@ -623,6 +973,53 @@ export default function TaskDetailsPage() {
           </>
         ) : (
           <p className="text-sm text-gray-400">No subtasks for this task.</p>
+        )}
+      </div>
+
+      <div className="mt-6 bg-[#111827] border border-gray-800 rounded-2xl p-6">
+        <h2 className="text-lg font-semibold mb-4">History</h2>
+
+        {historyItems.length === 0 ? (
+          <p className="text-sm text-gray-400">No history available for this task.</p>
+        ) : (
+          <div className="space-y-3">
+            {historyItems.map((item: HistoryItem, index: number) => {
+              const actor = users.find(
+                (u: any) => normalizeId(u) === String(item.userId || "")
+              );
+
+              return (
+                <div
+                  key={`${item.type}-${index}`}
+                  className="bg-[#0b1220] border border-gray-800 rounded-lg px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-medium text-white">
+                        {item.href ? (
+                          <Link
+                            href={item.href}
+                            className="hover:underline text-blue-400"
+                          >
+                            {item.label}
+                          </Link>
+                        ) : (
+                          item.label
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        {actor?.fullName || "Unknown user"}
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-gray-500 whitespace-nowrap">
+                      {item.date.toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>
