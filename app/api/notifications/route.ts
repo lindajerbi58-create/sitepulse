@@ -1,0 +1,58 @@
+import { NextRequest, NextResponse } from "next/server";
+import Notification from "@/models/Notification";
+import connectDB from "@/lib/mongodb";
+
+export async function GET(req: NextRequest) {
+  try {
+    await connectDB();
+
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get("userId");
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: "userId is required" },
+        { status: 400 }
+      );
+    }
+
+    const notifications = await Notification.find({ userId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return NextResponse.json(notifications);
+  } catch (error) {
+    console.error("GET /api/notifications error:", error);
+    return NextResponse.json(
+      { error: "Failed to load notifications" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    await connectDB();
+
+    const body = await req.json();
+
+    const notification = await Notification.create({
+      userId: String(body.userId || ""),
+      taskId: String(body.taskId || ""),
+      senderId: String(body.senderId || ""),
+      type: body.type || "task_progress_updated",
+      title: body.title || "Notification",
+      message: body.message || "",
+      isRead: false,
+      meta: body.meta || {},
+    });
+
+    return NextResponse.json(notification, { status: 201 });
+  } catch (error) {
+    console.error("POST /api/notifications error:", error);
+    return NextResponse.json(
+      { error: "Failed to create notification" },
+      { status: 500 }
+    );
+  }
+}

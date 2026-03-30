@@ -62,7 +62,7 @@ export default function TasksPage() {
   const router = useRouter();
 
   const currentUser = useUserStore((state: any) => state.currentUser);
-const { currentProjectId, setCurrentProjectId } = useProjectStore() as any;
+  const { currentProjectId, setCurrentProjectId } = useProjectStore() as any;
 
   const [viewMode, setViewMode] = useState<ViewMode>("all");
   const [mounted, setMounted] = useState(false);
@@ -70,12 +70,18 @@ const { currentProjectId, setCurrentProjectId } = useProjectStore() as any;
   const [tasks, setTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
-  const [procurementItems, setProcurementItems] = useState<ProcurementItem[]>([]);
+  const [procurementItems, setProcurementItems] = useState<ProcurementItem[]>(
+    []
+  );
   const [projects, setProjects] = useState<Project[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+
+  const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>(
+    {}
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -88,8 +94,6 @@ const { currentProjectId, setCurrentProjectId } = useProjectStore() as any;
     const d = new Date(value);
     return isNaN(d.getTime()) ? null : d;
   };
-
-  const isDev = process.env.NODE_ENV !== "production";
 
   const loadAllData = async (isRefresh = false) => {
     try {
@@ -148,85 +152,68 @@ const { currentProjectId, setCurrentProjectId } = useProjectStore() as any;
     if (!mounted) return;
     loadAllData();
   }, [mounted]);
-useEffect(() => {
-  if (!mounted) return;
 
-  if (currentProjectId) return;
+  useEffect(() => {
+    if (!mounted) return;
+    if (currentProjectId) return;
 
-  // 1) priorité : premier projet venant de la BD
-  if (projects.length > 0) {
-    const firstProjectId = normalizeId(projects[0]);
+    if (projects.length > 0) {
+      const firstProjectId = normalizeId(projects[0]);
+      if (firstProjectId) {
+        setCurrentProjectId(firstProjectId);
+        return;
+      }
+    }
 
-    if (firstProjectId) {
-      setCurrentProjectId(firstProjectId);
+    const firstTaskWithProject = tasks.find((t) => t.projectId);
+    if (firstTaskWithProject?.projectId) {
+      setCurrentProjectId(String(firstTaskWithProject.projectId));
       return;
     }
-  }
 
-  // 2) fallback : déduire depuis les tâches si elles ont un projectId
-  const firstTaskWithProject = tasks.find((t) => t.projectId);
-  if (firstTaskWithProject?.projectId) {
-    setCurrentProjectId(String(firstTaskWithProject.projectId));
-    return;
-  }
+    router.push("/projects");
+  }, [mounted, currentProjectId, projects, tasks, router, setCurrentProjectId]);
 
-  // 3) si vraiment rien n'existe, redirection
-  router.push("/projects");
-}, [mounted, currentProjectId, projects, tasks, router, setCurrentProjectId]);
+  const activeProject = useMemo(() => {
+    if (currentProjectId) {
+      const exactMatch = projects.find(
+        (p: any) => normalizeId(p) === String(currentProjectId || "")
+      );
+      if (exactMatch) return exactMatch;
+    }
 
-const activeProject = useMemo(() => {
-  if (currentProjectId) {
-    const exactMatch = projects.find(
-      (p: any) => normalizeId(p) === String(currentProjectId || "")
-    );
-    if (exactMatch) return exactMatch;
-  }
+    if (projects.length === 1) {
+      return projects[0];
+    }
 
-  // fallback 1 : si un seul projet existe en base, on le prend
-  if (projects.length === 1) {
-    return projects[0];
-  }
+    const taskProjectId = tasks.find((t: any) => t.projectId)?.projectId;
+    if (taskProjectId) {
+      return projects.find(
+        (p: any) => normalizeId(p) === String(taskProjectId)
+      );
+    }
 
-  // fallback 2 : si un projectId existe dans les tâches, on essaie de matcher
-  const taskProjectId = tasks.find((t: any) => t.projectId)?.projectId;
-  if (taskProjectId) {
-    return projects.find(
-      (p: any) => normalizeId(p) === String(taskProjectId)
-    );
-  }
+    return null;
+  }, [projects, currentProjectId, tasks]);
 
-  return null;
-}, [projects, currentProjectId, tasks]);
-const effectiveProjectId =
-  currentProjectId ||
-  normalizeId(activeProject) ||
-  tasks.find((t: any) => t.projectId)?.projectId ||
-  "";
+  const effectiveProjectId =
+    currentProjectId ||
+    normalizeId(activeProject) ||
+    tasks.find((t: any) => t.projectId)?.projectId ||
+    "";
 
-const activeProjectLabel = activeProject?.name || "Unnamed Project";
-
-console.log("currentProjectId =", currentProjectId);
-console.log(
-  "projects =",
-  projects.map((p: any) => ({
-    name: p.name,
-    id: p.id,
-    _id: p._id,
-    normalized: normalizeId(p),
-  }))
-);
-console.log(
-  "tasks projectIds =",
-  tasks.map((t: any) => ({
-    title: t.title,
-    projectId: t.projectId,
-  }))
-);
+  const activeProjectLabel = activeProject?.name || "Unnamed Project";
 
   const sortByDate = (a: Task, b: Task) => {
     const aTime = safeDate(a.dueDate)?.getTime() || 0;
     const bTime = safeDate(b.dueDate)?.getTime() || 0;
     return aTime - bTime;
+  };
+
+  const getDirectChildren = (taskId: string, allTasks: Task[]) => {
+    return (allTasks || []).filter(
+      (t: Task) => String(t.parentId || "") === String(taskId || "")
+    );
   };
 
   const getComputedStatus = (
@@ -270,17 +257,44 @@ console.log(
     return (item.status || "Not Started") as TaskStatus;
   };
 
-const projectTasks = useMemo(() => {
-  const selectedProjectId =
-    currentProjectId ||
-    normalizeId(activeProject) ||
-    tasks.find((t: any) => t.projectId)?.projectId ||
-    "";
+  const getDescendants = (
+    itemId: string,
+    allTasks: Task[],
+    visited = new Set<string>()
+  ): Task[] => {
+    if (!itemId || visited.has(itemId)) return [];
+    const nextVisited = new Set(visited);
+    nextVisited.add(itemId);
 
-  return tasks.filter(
-    (task) => String(task.projectId || "") === String(selectedProjectId)
-  );
-}, [tasks, currentProjectId, activeProject]);
+    const children = getDirectChildren(itemId, allTasks);
+    let result: Task[] = [...children];
+
+    for (const child of children) {
+      const childId = normalizeId(child);
+      result = result.concat(getDescendants(childId, allTasks, nextVisited));
+    }
+
+    return result;
+  };
+
+  const getBranchPriority = (task: Task): "High" | "Medium" | "Low" => {
+    const value = String(task.priority || "Low");
+    if (value === "High") return "High";
+    if (value === "Medium") return "Medium";
+    return "Low";
+  };
+
+  const projectTasks = useMemo(() => {
+    const selectedProjectId =
+      currentProjectId ||
+      normalizeId(activeProject) ||
+      tasks.find((t: any) => t.projectId)?.projectId ||
+      "";
+
+    return tasks.filter(
+      (task) => String(task.projectId || "") === String(selectedProjectId)
+    );
+  }, [tasks, currentProjectId, activeProject]);
 
   const filteredTasks = useMemo(() => {
     if (!currentUser) return [];
@@ -292,7 +306,7 @@ const projectTasks = useMemo(() => {
       const createdById = normalizeId(task.createdById);
 
       if (viewMode === "all") {
-        return assigneeId === me || createdById === me;
+        return true;
       }
 
       if (viewMode === "my") {
@@ -307,77 +321,108 @@ const projectTasks = useMemo(() => {
     });
   }, [projectTasks, currentUser, viewMode]);
 
-  const activeTasks = useMemo(() => {
+  const visibleTaskIds = useMemo(
+    () => new Set(filteredTasks.map((t) => normalizeId(t))),
+    [filteredTasks]
+  );
+
+  const visibleRootTasks = useMemo(() => {
     return filteredTasks.filter((task) => {
-      const parentKey = normalizeId(task);
+      const parentId = String(task.parentId || "");
+      return !parentId || !visibleTaskIds.has(parentId);
+    });
+  }, [filteredTasks, visibleTaskIds]);
 
-      const subtasks = tasks.filter(
-        (t) =>
-          String(t.parentId || "") === parentKey &&
-          String(t.projectId || "") === String(currentProjectId || "")
-      );
+  const getVisibleDirectSubtasks = (taskId: string) => {
+    return filteredTasks.filter(
+      (t) => String(t.parentId || "") === String(taskId || "")
+    );
+  };
 
-      const total = subtasks.length;
-      const completed = subtasks.filter(
-        (st) => getComputedStatus(st, tasks) === "Complete"
-      ).length;
+  const getTaskProgress = (item: Task) => {
+    const itemId = normalizeId(item);
+    const descendants = getDescendants(itemId, tasks);
+    const directChildren = getDirectChildren(itemId, tasks);
 
-      const progress =
-        total > 0 ? Math.round((completed / total) * 100) : Number(task.progress || 0);
+    if (directChildren.length === 0) {
+      return Math.min(Math.max(Number(item.progress || 0), 0), 100);
+    }
 
+    const leafNodes = descendants.filter((desc) => {
+      const descId = normalizeId(desc);
+      return getDirectChildren(descId, tasks).length === 0;
+    });
+
+    const baseNodes = leafNodes.length > 0 ? leafNodes : directChildren;
+
+    const total = baseNodes.length;
+    const completed = baseNodes.filter(
+      (node) => getComputedStatus(node, tasks) === "Complete"
+    ).length;
+
+    return total > 0 ? Math.round((completed / total) * 100) : 0;
+  };
+
+  const activeRootTasks = useMemo(() => {
+    return visibleRootTasks.filter((task) => {
       const displayedStatus = getComputedStatus(task, tasks);
-
+      const progress = getTaskProgress(task);
       return displayedStatus !== "Complete" && progress < 100;
     });
-  }, [filteredTasks, tasks, currentProjectId]);
+  }, [visibleRootTasks, tasks]);
 
-  const historyTasks = useMemo(() => {
-    return filteredTasks.filter((task) => {
-      const parentKey = normalizeId(task);
-
-      const subtasks = tasks.filter(
-        (t) =>
-          String(t.parentId || "") === parentKey &&
-          String(t.projectId || "") === String(currentProjectId || "")
-      );
-
-      const total = subtasks.length;
-      const completed = subtasks.filter(
-        (st) => getComputedStatus(st, tasks) === "Complete"
-      ).length;
-
-      const progress =
-        total > 0 ? Math.round((completed / total) * 100) : Number(task.progress || 0);
-
+  const historyRootTasks = useMemo(() => {
+    return visibleRootTasks.filter((task) => {
       const displayedStatus = getComputedStatus(task, tasks);
-
+      const progress = getTaskProgress(task);
       return displayedStatus === "Complete" || progress === 100;
     });
-  }, [filteredTasks, tasks, currentProjectId]);
+  }, [visibleRootTasks, tasks]);
 
   const high = useMemo(
     () =>
-      activeTasks
-        .filter((t) => String(t.priority || "") === "High")
+      activeRootTasks
+        .filter((t) => getBranchPriority(t) === "High")
         .sort(sortByDate),
-    [activeTasks]
+    [activeRootTasks]
   );
 
   const medium = useMemo(
     () =>
-      activeTasks
-        .filter((t) => String(t.priority || "") === "Medium")
+      activeRootTasks
+        .filter((t) => getBranchPriority(t) === "Medium")
         .sort(sortByDate),
-    [activeTasks]
+    [activeRootTasks]
   );
 
   const low = useMemo(
     () =>
-      activeTasks
-        .filter((t) => String(t.priority || "") === "Low")
+      activeRootTasks
+        .filter((t) => getBranchPriority(t) === "Low")
         .sort(sortByDate),
-    [activeTasks]
+    [activeRootTasks]
   );
+
+  useEffect(() => {
+    const nextExpanded: Record<string, boolean> = {};
+    for (const task of visibleRootTasks) {
+      const id = normalizeId(task);
+      if (id && expandedTasks[id] === undefined) {
+        nextExpanded[id] = true;
+      }
+    }
+
+    if (Object.keys(nextExpanded).length > 0) {
+      setExpandedTasks((prev) => ({ ...prev, ...nextExpanded }));
+    }
+  }, [visibleRootTasks]);
+
+  const toggleExpanded = (taskId: string) => {
+    setExpandedTasks((prev) => ({
+      ...prev,
+      [taskId]: !prev[taskId],
+    }));
+  };
 
   const getStatusBadgeClasses = (status: string) => {
     switch (status) {
@@ -416,6 +461,201 @@ const projectTasks = useMemo(() => {
     }
   };
 
+  const renderTaskHierarchy = (
+    item: Task,
+    level = 0,
+    visited = new Set<string>()
+  ): React.ReactNode => {
+    const itemId = normalizeId(item);
+    if (!itemId || visited.has(itemId)) return null;
+
+    const nextVisited = new Set(visited);
+    nextVisited.add(itemId);
+
+    const children = getVisibleDirectSubtasks(itemId);
+    const hasChildren = children.length > 0;
+    const isExpanded = expandedTasks[itemId] ?? true;
+
+    const blocked = procurementItems.some(
+      (p) =>
+        normalizeId(p.relatedTaskId) === itemId &&
+        String(p.status || "") !== "Delivered"
+    );
+
+    const delayRisk = predictDelay(item, reports);
+
+    const assigneeUser = users.find(
+      (u: User) => normalizeId(u) === normalizeId(item.assigneeId)
+    );
+
+    const computedStatus = getComputedStatus(item, tasks || []);
+    const rawStatus = item.status || "Not Started";
+    const progressValue = getTaskProgress(item);
+
+    const allDescendants = getDescendants(itemId, tasks);
+    const descendantLeaves = allDescendants.filter((desc) => {
+      const descId = normalizeId(desc);
+      return getDirectChildren(descId, tasks).length === 0;
+    });
+
+    const totalTracked = descendantLeaves.length;
+    const completedTracked = descendantLeaves.filter(
+      (st: Task) => getComputedStatus(st, tasks) === "Complete"
+    ).length;
+
+    return (
+      <div key={itemId} className="mt-4">
+        <div
+          className={`bg-[#111827] border p-5 rounded-2xl shadow-lg transition-all duration-200 ${
+            computedStatus === "Complete"
+              ? "border-gray-700 opacity-70"
+              : "hover:border-blue-500"
+          } ${level === 0 ? "border-gray-800" : "border-cyan-900/40 bg-[#0f172a]"}`}
+          style={{ marginLeft: `${level * 26}px` }}
+        >
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                {hasChildren && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleExpanded(itemId);
+                    }}
+                    className="h-7 w-7 rounded-full bg-slate-700 hover:bg-slate-600 text-sm flex items-center justify-center"
+                    aria-label={isExpanded ? "Collapse subtasks" : "Expand subtasks"}
+                  >
+                    {isExpanded ? "▾" : "▸"}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => router.push(`/tasks/${itemId}`)}
+                  className="text-left text-lg font-semibold hover:text-blue-400"
+                >
+                  {item.title || "Untitled task"}
+                </button>
+
+                {!item.parentId ? (
+                  <span className="text-xs px-3 py-1 rounded-full bg-slate-500/20 text-slate-300">
+                    Parent Task
+                  </span>
+                ) : (
+                  <span className="text-xs px-3 py-1 rounded-full bg-cyan-500/20 text-cyan-300">
+                    Subtask
+                  </span>
+                )}
+
+                {hasChildren && (
+                  <span className="text-xs px-3 py-1 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                    {children.length} direct subtask{children.length > 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2 mt-3">
+                <span
+                  className={`text-xs px-3 py-1 rounded-full ${getPriorityBadgeClasses(
+                    String(item.priority || "Low")
+                  )}`}
+                >
+                  {item.priority || "No Priority"}
+                </span>
+
+                <span
+                  className={`text-xs px-3 py-1 rounded-full ${getStatusBadgeClasses(
+                    computedStatus
+                  )}`}
+                >
+                  {computedStatus}
+                </span>
+
+                <span
+                  className={`text-xs px-3 py-1 rounded-full ${getDelayRiskBadgeClasses(
+                    String(delayRisk)
+                  )}`}
+                >
+                  Delay Risk: {String(delayRisk)}
+                </span>
+
+                {blocked && (
+                  <span className="text-xs px-3 py-1 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
+                    Waiting for Materials
+                  </span>
+                )}
+              </div>
+
+              <div className="text-sm mt-4">
+                Status:{" "}
+                <span className="font-medium text-gray-300">{computedStatus}</span>
+                {computedStatus !== rawStatus && (
+                  <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300">
+                    auto
+                  </span>
+                )}
+              </div>
+
+              <div className="text-sm text-gray-400 mt-3 space-y-1">
+                <div>
+                  Due:{" "}
+                  {item.dueDate
+                    ? new Date(item.dueDate).toLocaleDateString()
+                    : "N/A"}
+                </div>
+                <div>Assigned: {assigneeUser?.fullName || "Unassigned"}</div>
+              </div>
+
+              {hasChildren && (
+                <p className="mt-4 text-sm text-cyan-300">
+                  This task has {children.length} visible subtask
+                  {children.length > 1 ? "s" : ""}. They are shown below in the hierarchy.
+                </p>
+              )}
+            </div>
+
+            <div className="w-full md:w-1/3 flex flex-col items-center">
+              <div className="flex justify-between w-full text-xs mb-2">
+                <span className="text-gray-400">Progress</span>
+                <span className="font-bold text-blue-400">{progressValue}%</span>
+              </div>
+
+              <div className="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
+                <div
+                  className="h-3 rounded-full bg-green-500 transition-all duration-300"
+                  style={{ width: `${progressValue}%` }}
+                />
+              </div>
+
+              {totalTracked > 0 ? (
+                <div className="text-sm mt-2 text-gray-400">
+                  {completedTracked} / {totalTracked} completed
+                </div>
+              ) : hasChildren ? (
+                <div className="text-sm mt-2 text-gray-400">
+                  Parent task with subtasks
+                </div>
+              ) : (
+                <div className="text-sm mt-2 text-gray-400">
+                  Qualitative task
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {hasChildren && isExpanded && (
+          <div className="ml-4 border-l border-gray-700 pl-3">
+            {children.map((child: Task) =>
+              renderTaskHierarchy(child, level + 1, nextVisited)
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderGroup = (title: string, color: string, list: Task[]) => {
     if (list.length === 0) return null;
 
@@ -424,143 +664,7 @@ const projectTasks = useMemo(() => {
         <h2 className={`text-xl font-bold mb-4 ${color}`}>{title}</h2>
 
         <div className="space-y-4">
-          {list.map((task, index) => {
-            const taskId = normalizeId(task);
-
-            const blocked = procurementItems.some(
-              (p) =>
-                normalizeId(p.relatedTaskId) === taskId &&
-                String(p.status || "") !== "Delivered"
-            );
-
-            const delayRisk = predictDelay(task, reports);
-
-            const assignee = users.find(
-              (u) => normalizeId(u) === normalizeId(task.assigneeId)
-            );
-
-            const subtasks = tasks.filter(
-              (t) =>
-                String(t.parentId || "") === taskId &&
-                String(t.projectId || "") === String(currentProjectId || "")
-            );
-
-            const totalSubtasks = subtasks.length;
-            const completedSubtasks = subtasks.filter(
-              (st) => getComputedStatus(st, tasks) === "Complete"
-            ).length;
-
-            const progress =
-              totalSubtasks > 0
-                ? Math.round((completedSubtasks / totalSubtasks) * 100)
-                : Number(task.progress || 0);
-
-            const computedTaskStatus = getComputedStatus(task, tasks);
-            const rawTaskStatus = task.status || "Not Started";
-
-            return (
-              <div
-                key={taskId || `${task.title}-${task.dueDate}-${index}`}
-                onClick={() => {
-                  if (!taskId) return;
-                  if (computedTaskStatus !== "Complete") {
-                    router.push(`/tasks/${taskId}`);
-                  }
-                }}
-                className={`bg-[#111827] border p-5 rounded-2xl shadow-lg transition-all duration-200 ${
-                  computedTaskStatus === "Complete"
-                    ? "border-gray-700 opacity-50 grayscale cursor-not-allowed"
-                    : "border-gray-800 cursor-pointer hover:border-blue-500 hover:scale-[1.01]"
-                }`}
-              >
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-                  <div>
-                    <h3 className="text-lg font-semibold">{task.title}</h3>
-
-                    <div className="flex flex-wrap gap-2 mt-3">
-                      <span
-                        className={`text-xs px-3 py-1 rounded-full ${getPriorityBadgeClasses(
-                          String(task.priority || "Low")
-                        )}`}
-                      >
-                        {task.priority || "No Priority"}
-                      </span>
-
-                      <span
-                        className={`text-xs px-3 py-1 rounded-full ${getStatusBadgeClasses(
-                          computedTaskStatus
-                        )}`}
-                      >
-                        {computedTaskStatus}
-                      </span>
-
-                      <span
-                        className={`text-xs px-3 py-1 rounded-full ${getDelayRiskBadgeClasses(
-                          String(delayRisk)
-                        )}`}
-                      >
-                        Delay Risk: {String(delayRisk)}
-                      </span>
-
-                      {blocked && (
-                        <span className="text-xs px-3 py-1 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
-                          Waiting for Materials
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="text-sm text-gray-400 md:text-right">
-                    <div>
-                      Due:{" "}
-                      {task.dueDate
-                        ? new Date(task.dueDate).toLocaleDateString()
-                        : "N/A"}
-                    </div>
-                    <div className="mt-1">
-                      Assigned: {assignee?.fullName || "Unassigned"}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="text-sm mt-4">
-                  Status:{" "}
-                  <span className="font-medium text-gray-300">
-                    {computedTaskStatus}
-                  </span>
-                  {computedTaskStatus !== rawTaskStatus && (
-                    <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300">
-                      auto
-                    </span>
-                  )}
-                </div>
-
-                <div className="mt-6 flex flex-col items-center">
-                  <div className="flex justify-between w-full md:w-2/3 text-xs mb-2">
-                    <span className="text-gray-400">Progress</span>
-                    <span className="font-bold text-blue-400">{progress}%</span>
-                  </div>
-
-                  <div className="w-full md:w-2/3 bg-gray-800 rounded-full h-3 overflow-hidden">
-                    <div
-                      className="h-3 rounded-full bg-green-500 transition-all duration-300"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-
-                  {totalSubtasks > 0 ? (
-                    <div className="text-sm mt-2 text-gray-400">
-                      {completedSubtasks} / {totalSubtasks} completed
-                    </div>
-                  ) : (
-                    <div className="text-sm mt-2 text-gray-400">
-                      Qualitative task
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {list.map((task: Task) => renderTaskHierarchy(task))}
         </div>
       </div>
     );
@@ -574,7 +678,7 @@ const projectTasks = useMemo(() => {
     );
   }
 
-  if (!currentProjectId) {
+  if (!effectiveProjectId) {
     return (
       <div className="min-h-screen bg-[#0b1220] text-white flex items-center justify-center">
         Redirecting to Projects...
@@ -658,10 +762,10 @@ const projectTasks = useMemo(() => {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
         <MiniKpi title="Visible Tasks" value={filteredTasks.length} />
-        <MiniKpi title="Active" value={activeTasks.length} />
-        <MiniKpi title="History" value={historyTasks.length} />
+        <MiniKpi title="Active Branches" value={activeRootTasks.length} />
+        <MiniKpi title="History Branches" value={historyRootTasks.length} />
         <MiniKpi
-          title="High Priority"
+          title="High Priority Branches"
           value={high.length}
           accent="text-red-400"
         />
@@ -677,14 +781,15 @@ const projectTasks = useMemo(() => {
           {renderGroup("MEDIUM PRIORITY", "text-green-400", medium)}
           {renderGroup("LOW PRIORITY", "text-yellow-400", low)}
 
-          {historyTasks.length > 0 && (
+          {historyRootTasks.length > 0 && (
             <div className="mt-16">
               <h2 className="text-xl font-bold text-gray-500 mb-6">History</h2>
 
               <div className="space-y-4">
-                {historyTasks.map((task, index) => {
+                {historyRootTasks.map((task, index) => {
                   const taskId = normalizeId(task);
                   const computedTaskStatus = getComputedStatus(task, tasks);
+                  const progress = getTaskProgress(task);
 
                   return (
                     <div
@@ -699,7 +804,8 @@ const projectTasks = useMemo(() => {
                           <p className="text-sm text-gray-500 mt-2">
                             {computedTaskStatus === "Complete"
                               ? "Completed"
-                              : computedTaskStatus}
+                              : computedTaskStatus}{" "}
+                            • {progress}%
                           </p>
                         </div>
 

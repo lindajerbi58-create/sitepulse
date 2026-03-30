@@ -500,6 +500,181 @@ export default function TaskDetailsPage() {
     }
   };
 
+  const projectTasks = useMemo(() => {
+    if (!task) return [];
+    return (tasks || []).filter(
+      (t: any) => String(t.projectId || "") === String(task.projectId || "")
+    );
+  }, [tasks, task]);
+
+  const directChildrenMap = useMemo(() => {
+    const map = new Map<string, Task[]>();
+
+    for (const t of projectTasks) {
+      const parentKey = String(t.parentId || "");
+      if (!map.has(parentKey)) {
+        map.set(parentKey, []);
+      }
+      map.get(parentKey)!.push(t);
+    }
+
+    return map;
+  }, [projectTasks]);
+
+  const getDirectSubtasks = (taskId: string) => {
+    return directChildrenMap.get(String(taskId || "")) || [];
+  };
+
+  const parentTask = useMemo(() => {
+    if (!task?.parentId) return null;
+    return projectTasks.find(
+      (t: any) => String(t.id || t._id) === String(task.parentId)
+    );
+  }, [task, projectTasks]);
+
+  const rootOfCurrentHierarchy = useMemo(() => {
+    if (!task) return null;
+
+    let current: any = task;
+    let guard = 0;
+
+    while (current?.parentId && guard < 30) {
+      const parent = projectTasks.find(
+        (t: any) => String(t.id || t._id) === String(current.parentId)
+      );
+
+      if (!parent) break;
+      current = parent;
+      guard++;
+    }
+
+    return current;
+  }, [task, projectTasks]);
+
+  const renderTaskNode = (
+    node: Task,
+    level = 0,
+    visited = new Set<string>()
+  ): React.ReactNode => {
+    const nodeId = String(node.id || node._id || "");
+
+    if (!nodeId || visited.has(nodeId)) return null;
+
+    const nextVisited = new Set(visited);
+    nextVisited.add(nodeId);
+
+    const children = getDirectSubtasks(nodeId);
+    const hasChildren = children.length > 0;
+
+    const nodeAssignee = users.find(
+      (u: any) => normalizeId(u) === normalizeId(node.assigneeId)
+    );
+
+    const nodeComputedStatus = getComputedStatus(node, tasks || []);
+    const isCurrentTask = nodeId === String(task?.id || task?._id || "");
+
+    const rawProgress = Number(node.progress || 0);
+    const displayProgress =
+      hasChildren && nodeId === String(task?.id || task?._id || "")
+        ? progress
+        : Math.min(Math.max(rawProgress, 0), 100);
+
+    return (
+      <div key={nodeId} className="mt-3">
+        <div
+          className={`rounded-xl border p-4 ${
+            isCurrentTask
+              ? "border-cyan-500 bg-cyan-500/10"
+              : "border-gray-800 bg-[#0b1220]"
+          }`}
+          style={{ marginLeft: `${level * 24}px` }}
+        >
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-white">
+                  {node.title || "Untitled task"}
+                </span>
+
+                {isCurrentTask && (
+                  <span className="text-[10px] px-2 py-1 rounded-full bg-cyan-500/20 text-cyan-300">
+                    Current Task
+                  </span>
+                )}
+
+                {node.parentId ? (
+                  <span className="text-[10px] px-2 py-1 rounded-full bg-violet-500/20 text-violet-300">
+                    Subtask
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-2 py-1 rounded-full bg-slate-500/20 text-slate-300">
+                    Parent Task
+                  </span>
+                )}
+              </div>
+
+              <div className="text-xs text-gray-400 mt-2 flex flex-wrap gap-3">
+                <span>ID: {nodeId}</span>
+                <span>Assigned: {nodeAssignee?.fullName || "Unassigned"}</span>
+                <span>
+                  Due:{" "}
+                  {node.dueDate
+                    ? new Date(node.dueDate).toLocaleDateString()
+                    : "N/A"}
+                </span>
+              </div>
+
+              {hasChildren && (
+                <p className="text-sm text-cyan-300 mt-3">
+                  This task has {children.length} subtask
+                  {children.length > 1 ? "s" : ""}. They are shown below in the
+                  hierarchy.
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`text-xs px-3 py-1 rounded-full ${getStatusBadgeClasses(
+                  nodeComputedStatus
+                )}`}
+              >
+                {nodeComputedStatus}
+              </span>
+
+              <span
+                className={`text-xs px-3 py-1 rounded-full ${getPriorityBadgeClasses(
+                  String(node.priority || "Low")
+                )}`}
+              >
+                {node.priority || "No Priority"}
+              </span>
+
+              <span className="text-xs px-3 py-1 rounded-full bg-blue-500/20 text-blue-300">
+                {displayProgress}%
+              </span>
+
+              <button
+                onClick={() => router.push(`/tasks/${nodeId}`)}
+                className="text-xs bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-lg"
+              >
+                Open
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {hasChildren && (
+          <div className="border-l border-gray-700 ml-3 pl-2">
+            {children.map((child: any) =>
+              renderTaskNode(child, level + 1, nextVisited)
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (!mounted || loading) {
     return (
       <div className="min-h-screen bg-[#0b1220] text-white flex items-center justify-center">
@@ -733,6 +908,37 @@ export default function TaskDetailsPage() {
             </p>
           </div>
         </div>
+      </div>
+
+      <div className="mt-6 bg-[#111827] border border-gray-800 rounded-2xl p-6">
+        <h2 className="text-lg font-semibold mb-4">Task Hierarchy</h2>
+
+        {parentTask && (
+          <div className="mb-4 rounded-lg border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm text-violet-200">
+            This task is a subtask of{" "}
+            <Link
+              href={`/tasks/${String(parentTask.id || parentTask._id)}`}
+              className="underline text-violet-300 hover:text-violet-200"
+            >
+              {parentTask.title || "Untitled parent task"}
+            </Link>
+            .
+          </div>
+        )}
+
+        {rootOfCurrentHierarchy ? (
+          <div>
+            <p className="text-sm text-gray-400 mb-4">
+              Tasks and subtasks are displayed below as a hierarchy. Each level
+              is slightly indented under its parent task.
+            </p>
+            {renderTaskNode(rootOfCurrentHierarchy)}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">
+            No hierarchy available for this task.
+          </p>
+        )}
       </div>
 
       <div className="mt-6 bg-[#111827] border border-gray-800 rounded-2xl p-6">
