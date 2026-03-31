@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { predictDelay } from "@/lib/delayPredictor";
 import { useProjectStore } from "@/store/useProjectStore";
 import { useUserStore } from "@/store/useUserStore";
@@ -10,7 +10,7 @@ import { useTaskStore } from "@/store/useTaskStore";
 import { useDailyReportStore } from "@/store/useDailyReportStore";
 import { useProcurementStore } from "@/store/useProcurementStore";
 
-type ViewMode = "my" | "assigned" | "all";
+type ViewMode = "my" | "assigned" | "all" | "myDelayed";
 
 type TaskStatus = "Not Started" | "In Progress" | "On Hold" | "Complete";
 
@@ -38,16 +38,6 @@ type User = {
   role?: string;
 };
 
-type Report = {
-  _id?: string;
-  id?: string;
-  createdAt?: string;
-  date?: string;
-  userId?: string | { _id?: string; id?: string } | null;
-  targetQuantity?: number;
-  actualQuantity?: number;
-};
-
 type ProcurementItem = {
   _id?: string;
   id?: string;
@@ -55,14 +45,9 @@ type ProcurementItem = {
   status?: string;
 };
 
-type Project = {
-  _id?: string;
-  id?: string;
-  name?: string;
-};
-
 export default function TasksPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const { currentUser, setUsers, users } = useUserStore() as any;
   const { currentProjectId, setCurrentProjectId, setProjects, projects } =
@@ -97,6 +82,8 @@ export default function TasksPage() {
   const normalizeId = (value: any) =>
     String(value?._id || value?.id || value || "");
 
+  const assigneeFromUrl = searchParams.get("assignee") || "";
+
   const safeDate = (value: any) => {
     const d = new Date(value);
     return isNaN(d.getTime()) ? null : d;
@@ -104,11 +91,8 @@ export default function TasksPage() {
 
   const loadAllData = async (isRefresh = false) => {
     try {
-      if (isRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
 
       setError("");
 
@@ -206,6 +190,14 @@ export default function TasksPage() {
 
   const activeProjectLabel = activeProject?.name || "Unnamed Project";
 
+  const selectedUserLabel = useMemo(() => {
+    if (!assigneeFromUrl) return "";
+    const found = (Array.isArray(users) ? users : []).find(
+      (u: User) => normalizeId(u) === assigneeFromUrl
+    );
+    return found?.fullName || "selected user";
+  }, [assigneeFromUrl, users]);
+
   const sortByDate = (a: Task, b: Task) => {
     const aTime = safeDate(a.dueDate)?.getTime() || 0;
     const bTime = safeDate(b.dueDate)?.getTime() || 0;
@@ -286,33 +278,42 @@ export default function TasksPage() {
     return "Low";
   };
 
-  const projectTasks = useMemo(() => {
-    const selectedProjectId =
-      currentProjectId ||
-      normalizeId(activeProject) ||
-      tasks.find((t: any) => t.projectId)?.projectId ||
-      "";
-
-    const safeTasks = Array.isArray(tasks)
+  const safeTasks = useMemo(() => {
+    return Array.isArray(tasks)
       ? tasks
       : Array.isArray((tasks as any)?.tasks)
         ? (tasks as any).tasks
         : [];
+  }, [tasks]);
+
+  const projectTasks = useMemo(() => {
+    const selectedProjectId =
+      currentProjectId ||
+      normalizeId(activeProject) ||
+      safeTasks.find((t: any) => t.projectId)?.projectId ||
+      "";
 
     return safeTasks.filter(
       (task: Task) =>
         String(task.projectId || "") === String(selectedProjectId)
     );
-  }, [tasks, currentProjectId, activeProject]);
+  }, [safeTasks, currentProjectId, activeProject]);
 
   const filteredTasks = useMemo(() => {
     if (!currentUser) return [];
 
-    const me = String(currentUser._id || currentUser.id || "");
+    const me = normalizeId(currentUser);
+    const now = new Date();
 
     return projectTasks.filter((task: Task) => {
       const assigneeId = normalizeId(task.assigneeId);
       const createdById = normalizeId(task.createdById);
+      const computedStatus = getComputedStatus(task, projectTasks);
+      const due = safeDate(task.dueDate);
+
+      if (assigneeFromUrl) {
+        return assigneeId === assigneeFromUrl;
+      }
 
       if (viewMode === "all") {
         return true;
@@ -326,9 +327,18 @@ export default function TasksPage() {
         return createdById === me;
       }
 
+      if (viewMode === "myDelayed") {
+        return (
+          assigneeId === me &&
+          !!due &&
+          due.getTime() < now.getTime() &&
+          computedStatus !== "Complete"
+        );
+      }
+
       return false;
     });
-  }, [projectTasks, currentUser, viewMode]);
+  }, [projectTasks, currentUser, viewMode, assigneeFromUrl]);
 
   const visibleTaskIds = useMemo(
     () => new Set(filteredTasks.map((t: Task) => normalizeId(t))),
@@ -350,8 +360,8 @@ export default function TasksPage() {
 
   const getTaskProgress = (item: Task) => {
     const itemId = normalizeId(item);
-    const descendants = getDescendants(itemId, tasks);
-    const directChildren = getDirectChildren(itemId, tasks);
+    const descendants = getDescendants(itemId, safeTasks);
+    const directChildren = getDirectChildren(itemId, safeTasks);
 
     if (directChildren.length === 0) {
       return Math.min(Math.max(Number(item.progress || 0), 0), 100);
@@ -359,7 +369,7 @@ export default function TasksPage() {
 
     const leafNodes = descendants.filter((desc: Task) => {
       const descId = normalizeId(desc);
-      return getDirectChildren(descId, tasks).length === 0;
+      return getDirectChildren(descId, safeTasks).length === 0;
     });
 
     const baseNodes = leafNodes.length > 0 ? leafNodes : directChildren;
@@ -367,7 +377,7 @@ export default function TasksPage() {
     if (baseNodes.length === 0) return 0;
 
     const totalProgress = baseNodes.reduce((sum: number, node: Task) => {
-      const status = getComputedStatus(node, tasks);
+      const status = getComputedStatus(node, safeTasks);
 
       if (status === "Complete") return sum + 100;
       if (status === "Not Started") return sum + 0;
@@ -380,9 +390,10 @@ export default function TasksPage() {
 
     return Math.round(totalProgress / baseNodes.length);
   };
+
   const isLeafTask = (item: Task) => {
     const itemId = normalizeId(item);
-    return getDirectChildren(itemId, tasks).length === 0;
+    return getDirectChildren(itemId, safeTasks).length === 0;
   };
 
   const canUpdateOwnProgress = (item: Task) => {
@@ -449,7 +460,10 @@ export default function TasksPage() {
         : progressInputs[taskId] ?? Number(task.progress || 0);
 
     const nextProgress = Math.max(0, Math.min(100, Number(nextProgressRaw || 0)));
-    const nextStatus = getManualStatusFromProgress(nextProgress, String(task.status || ""));
+    const nextStatus = getManualStatusFromProgress(
+      nextProgress,
+      String(task.status || "")
+    );
 
     try {
       setUpdatingTaskId(taskId);
@@ -476,25 +490,20 @@ export default function TasksPage() {
 
       const updatedTask = await res.json();
 
-      const safeTasks = Array.isArray(tasks)
-        ? tasks
-        : Array.isArray((tasks as any)?.tasks)
-          ? (tasks as any).tasks
-          : [];
-
       setTasks(
         safeTasks.map((existing: Task) =>
           normalizeId(existing) === taskId
             ? {
-              ...existing,
-              ...updatedTask,
-              progress: updatedTask?.progress ?? nextProgress,
-              status: updatedTask?.status ?? nextStatus,
-              updatedAt: updatedTask?.updatedAt || new Date().toISOString(),
-            }
+                ...existing,
+                ...updatedTask,
+                progress: updatedTask?.progress ?? nextProgress,
+                status: updatedTask?.status ?? nextStatus,
+                updatedAt: updatedTask?.updatedAt || new Date().toISOString(),
+              }
             : existing
         )
       );
+
       setProgressInputs((prev) => ({
         ...prev,
         [taskId]: updatedTask?.progress ?? nextProgress,
@@ -530,19 +539,45 @@ export default function TasksPage() {
 
   const activeRootTasks = useMemo(() => {
     return visibleRootTasks.filter((task: Task) => {
-      const displayedStatus = getComputedStatus(task, tasks);
+      const displayedStatus = getComputedStatus(task, safeTasks);
       const progress = getTaskProgress(task);
       return displayedStatus !== "Complete" && progress < 100;
     });
-  }, [visibleRootTasks, tasks]);
+  }, [visibleRootTasks, safeTasks]);
 
   const historyRootTasks = useMemo(() => {
     return visibleRootTasks.filter((task: Task) => {
-      const displayedStatus = getComputedStatus(task, tasks);
+      const displayedStatus = getComputedStatus(task, safeTasks);
       const progress = getTaskProgress(task);
       return displayedStatus === "Complete" || progress === 100;
     });
-  }, [visibleRootTasks, tasks]);
+  }, [visibleRootTasks, safeTasks]);
+
+  const delayedTasks = useMemo(() => {
+    const now = new Date();
+
+    const allDelayed = filteredTasks.filter((task: Task) => {
+      const displayedStatus = getComputedStatus(task, safeTasks);
+      const due = safeDate(task.dueDate);
+
+      if (!due) return false;
+      if (displayedStatus === "Complete") return false;
+
+      return due.getTime() < now.getTime();
+    });
+
+    const delayedIds = new Set(
+      allDelayed.map((task: Task) => normalizeId(task))
+    );
+
+    return allDelayed
+      .filter((task: Task) => {
+        const parentId = normalizeId(task.parentId);
+        if (!parentId) return true;
+        return !delayedIds.has(parentId);
+      })
+      .sort(sortByDate);
+  }, [filteredTasks, safeTasks]);
 
   const high = useMemo(
     () =>
@@ -593,7 +628,7 @@ export default function TasksPage() {
     }
 
     setProgressInputs((prev) => ({ ...nextInputs, ...prev }));
-  }, [filteredTasks, tasks]);
+  }, [filteredTasks, safeTasks]);
 
   const toggleExpanded = (taskId: string) => {
     setExpandedTasks((prev) => ({
@@ -666,32 +701,42 @@ export default function TasksPage() {
       (u: User) => normalizeId(u) === normalizeId(item.assigneeId)
     );
 
-    const computedStatus = getComputedStatus(item, tasks || []);
+    const computedStatus = getComputedStatus(item, safeTasks);
     const rawStatus = item.status || "Not Started";
     const progressValue = getTaskProgress(item);
     const canEdit = canUpdateOwnProgress(item);
     const liveInputValue =
-      progressInputs[itemId] ?? Math.min(Math.max(Number(item.progress || 0), 0), 100);
+      progressInputs[itemId] ??
+      Math.min(Math.max(Number(item.progress || 0), 0), 100);
     const isSaving = updatingTaskId === itemId;
 
-    const allDescendants = getDescendants(itemId, tasks);
+    const allDescendants = getDescendants(itemId, safeTasks);
     const descendantLeaves = allDescendants.filter((desc: any) => {
       const descId = normalizeId(desc);
-      return getDirectChildren(descId, tasks).length === 0;
+      return getDirectChildren(descId, safeTasks).length === 0;
     });
 
     const totalTracked = descendantLeaves.length;
     const completedTracked = descendantLeaves.filter(
-      (st: Task) => getComputedStatus(st, tasks) === "Complete"
+      (st: Task) => getComputedStatus(st, safeTasks) === "Complete"
     ).length;
+
+    const due = safeDate(item.dueDate);
+    const isDelayed =
+      !!due &&
+      due.getTime() < Date.now() &&
+      computedStatus !== "Complete";
 
     return (
       <div key={itemId} className="mt-4">
         <div
-          className={`bg-[#111827] border p-5 rounded-2xl shadow-lg transition-all duration-200 ${computedStatus === "Complete"
-            ? "border-gray-700 opacity-70"
-            : "hover:border-blue-500"
-            } ${level === 0 ? "border-gray-800" : "border-cyan-900/40 bg-[#0f172a]"}`}
+          className={`bg-[#111827] border p-5 rounded-2xl shadow-lg transition-all duration-200 ${
+            computedStatus === "Complete"
+              ? "border-gray-700 opacity-70"
+              : isDelayed
+                ? "border-red-500/40 hover:border-red-400"
+                : "hover:border-blue-500 border-gray-800"
+          } ${level === 0 ? "" : "bg-[#0f172a]"}`}
           style={{ marginLeft: `${level * 26}px` }}
         >
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
@@ -733,6 +778,12 @@ export default function TasksPage() {
                 {hasChildren && (
                   <span className="text-xs px-3 py-1 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30">
                     {children.length} direct subtask{children.length > 1 ? "s" : ""}
+                  </span>
+                )}
+
+                {isDelayed && (
+                  <span className="text-xs px-3 py-1 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
+                    Delayed
                   </span>
                 )}
 
@@ -921,7 +972,6 @@ export default function TasksPage() {
     return (
       <div className="mb-12">
         <h2 className={`text-xl font-bold mb-4 ${color}`}>{title}</h2>
-
         <div className="space-y-4">
           {list.map((task: Task) => renderTaskHierarchy(task))}
         </div>
@@ -953,29 +1003,56 @@ export default function TasksPage() {
         <div className="flex flex-wrap gap-3">
           <button
             onClick={() => setViewMode("all")}
-            className={`px-4 py-2 rounded-lg ${viewMode === "all" ? "bg-gray-500" : "bg-gray-700 hover:bg-gray-600"
-              }`}
+            className={`px-4 py-2 rounded-lg ${
+              viewMode === "all"
+                ? "bg-gray-500"
+                : "bg-gray-700 hover:bg-gray-600"
+            }`}
           >
-            All
+            All Tasks
           </button>
 
           <button
             onClick={() => setViewMode("my")}
-            className={`px-4 py-2 rounded-lg ${viewMode === "my" ? "bg-blue-600" : "bg-blue-700 hover:bg-blue-600"
-              }`}
+            className={`px-4 py-2 rounded-lg ${
+              viewMode === "my"
+                ? "bg-blue-600"
+                : "bg-blue-700 hover:bg-blue-600"
+            }`}
           >
             My Tasks
           </button>
 
           <button
             onClick={() => setViewMode("assigned")}
-            className={`px-4 py-2 rounded-lg ${viewMode === "assigned"
-              ? "bg-purple-600"
-              : "bg-purple-700 hover:bg-purple-600"
-              }`}
+            className={`px-4 py-2 rounded-lg ${
+              viewMode === "assigned"
+                ? "bg-purple-600"
+                : "bg-purple-700 hover:bg-purple-600"
+            }`}
           >
             Assigned by Me
           </button>
+
+          <button
+            onClick={() => setViewMode("myDelayed")}
+            className={`px-4 py-2 rounded-lg ${
+              viewMode === "myDelayed"
+                ? "bg-red-600"
+                : "bg-red-700 hover:bg-red-600"
+            }`}
+          >
+            My Delayed Tasks
+          </button>
+
+          {assigneeFromUrl && (
+            <button
+              onClick={() => router.push("/tasks")}
+              className="px-4 py-2 rounded-lg bg-slate-600 hover:bg-slate-500"
+            >
+              Clear User Filter
+            </button>
+          )}
 
           <button
             onClick={() => loadAllData(true)}
@@ -994,7 +1071,7 @@ export default function TasksPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between bg-[#111827] border border-gray-800 px-4 py-3 rounded-xl mb-6">
+      <div className="flex flex-col gap-3 bg-[#111827] border border-gray-800 px-4 py-3 rounded-xl mb-6 md:flex-row md:items-center md:justify-between">
         <div className="text-sm text-gray-400">
           Active Project:
           <span className="ml-2 text-blue-400 font-semibold">
@@ -1002,12 +1079,20 @@ export default function TasksPage() {
           </span>
         </div>
 
-        <Link
-          href="/projects"
-          className="text-sm bg-indigo-600 hover:bg-indigo-700 px-3 py-1 rounded-md"
-        >
-          Switch Project
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          {assigneeFromUrl && (
+            <div className="text-sm rounded-lg bg-blue-500/20 text-blue-300 px-3 py-1 border border-blue-500/30">
+              Viewing tasks for {selectedUserLabel}
+            </div>
+          )}
+
+          <Link
+            href="/projects"
+            className="text-sm bg-indigo-600 hover:bg-indigo-700 px-3 py-1 rounded-md"
+          >
+            Switch Project
+          </Link>
+        </div>
       </div>
 
       {error && (
@@ -1016,9 +1101,14 @@ export default function TasksPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10">
         <MiniKpi title="Visible Tasks" value={filteredTasks.length} />
         <MiniKpi title="Active Branches" value={activeRootTasks.length} />
+        <MiniKpi
+          title="Delayed Tasks"
+          value={delayedTasks.length}
+          accent="text-red-400"
+        />
         <MiniKpi title="History Branches" value={historyRootTasks.length} />
         <MiniKpi
           title="High Priority Branches"
@@ -1029,22 +1119,42 @@ export default function TasksPage() {
 
       {filteredTasks.length === 0 ? (
         <div className="bg-[#111827] border border-gray-800 rounded-2xl p-10 text-center text-gray-400">
-          No tasks found for this view.
+          {viewMode === "myDelayed"
+            ? "You have no delayed tasks."
+            : assigneeFromUrl
+              ? "This user has no tasks in the active project."
+              : "No tasks found for this view."}
         </div>
       ) : (
         <>
-          {renderGroup("HIGH PRIORITY", "text-red-400", high)}
-          {renderGroup("MEDIUM PRIORITY", "text-green-400", medium)}
-          {renderGroup("LOW PRIORITY", "text-yellow-400", low)}
+          {delayedTasks.length > 0 && (
+            <div className="mb-12">
+              <h2 className="text-xl font-bold mb-4 text-red-400">
+                DELAYED TASKS
+              </h2>
 
-          {historyRootTasks.length > 0 && (
+              <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                These tasks and subtasks are past their due date and still not completed.
+              </div>
+
+              <div className="space-y-4">
+                {delayedTasks.map((task: Task) => renderTaskHierarchy(task))}
+              </div>
+            </div>
+          )}
+
+          {viewMode !== "myDelayed" && renderGroup("HIGH PRIORITY", "text-red-400", high)}
+          {viewMode !== "myDelayed" && renderGroup("MEDIUM PRIORITY", "text-green-400", medium)}
+          {viewMode !== "myDelayed" && renderGroup("LOW PRIORITY", "text-yellow-400", low)}
+
+          {historyRootTasks.length > 0 && viewMode !== "myDelayed" && (
             <div className="mt-16">
               <h2 className="text-xl font-bold text-gray-500 mb-6">History</h2>
 
               <div className="space-y-4">
                 {historyRootTasks.map((task: Task, index: number) => {
                   const taskId = normalizeId(task);
-                  const computedTaskStatus = getComputedStatus(task, tasks);
+                  const computedTaskStatus = getComputedStatus(task, safeTasks);
                   const progress = getTaskProgress(task);
 
                   return (
