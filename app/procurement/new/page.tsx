@@ -161,6 +161,7 @@ export default function ProcurementNewPage() {
               type="date"
               value={expectedDate}
               onChange={(e) => setExpectedDate(e.target.value)}
+              min={new Date().toISOString().split("T")[0]}
               className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
             />
           </div>

@@ -73,35 +73,59 @@ export default function ProcurementPage() {
     String(status || "").trim().toLowerCase();
   const activeItems = useMemo(() => {
     return items.filter((item: any) => {
-      const status = normalizeStatus(item.status);
-      return status !== "cancelled";
+      const status = String(item.status || "").trim().toLowerCase();
+      return status === "confirmed" || status === "delivered";
     });
   }, [items]);
 
   const pendingItems = useMemo(() => {
     return items.filter(
-      (item: any) => normalizeStatus(item.status) === "pending confirmation"
+      (item: any) =>
+        String(item.status || "").trim().toLowerCase() === "pending confirmation"
     );
   }, [items]);
 
   const confirmedItems = useMemo(() => {
     return items.filter(
-      (item: any) => normalizeStatus(item.status) === "confirmed"
+      (item: any) =>
+        String(item.status || "").trim().toLowerCase() === "confirmed"
     );
   }, [items]);
 
   const cancelledItems = useMemo(() => {
     return items.filter(
-      (item: any) => normalizeStatus(item.status) === "cancelled"
+      (item: any) =>
+        String(item.status || "").trim().toLowerCase() === "cancelled"
     );
   }, [items]);
 
   const deliveredItems = useMemo(() => {
     return items.filter(
-      (item: any) => normalizeStatus(item.status) === "delivered"
+      (item: any) =>
+        String(item.status || "").trim().toLowerCase() === "delivered"
     );
   }, [items]);
+  const handleStatusChangeWithConfirm = async (
+    item: any,
+    nextStatus: "Pending Confirmation" | "Confirmed" | "Cancelled" | "Delivered"
+  ) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to change "${item.title}" to "${nextStatus}"?`
+    );
 
+    if (!confirmed) return;
+
+    const result = await updateItem(item._id || item.id, {
+      status: nextStatus,
+    } as any);
+
+    if (!result.ok) {
+      setActionMessage(result.message || `Failed to update order to ${nextStatus}.`);
+      return;
+    }
+
+    setActionMessage(`Order "${item.title}" updated to ${nextStatus}.`);
+  };
   const totalCommitted = useMemo(() => {
     return activeItems.reduce((sum: number, item: any) => {
       const qty = Number(item.quantity || 0);
@@ -177,7 +201,24 @@ export default function ProcurementPage() {
       </div>
     );
   }
+  const handleMarkDelivered = async (item: any) => {
+    const confirmed = window.confirm(
+      `Are you sure you received "${item.title}"?`
+    );
 
+    if (!confirmed) return;
+
+    const result = await updateItem(item._id || item.id, {
+      status: "Delivered",
+    } as any);
+
+    if (!result.ok) {
+      setActionMessage(result.message || "Failed to mark order as delivered.");
+      return;
+    }
+
+    setActionMessage(`Order "${item.title}" marked as Delivered.`);
+  };
   return (
     <div className="min-h-screen bg-[#0b1220] text-white p-8">
       <div className="flex justify-between items-center mb-10">
@@ -208,22 +249,23 @@ export default function ProcurementPage() {
 
       <div className="grid md:grid-cols-5 gap-6 mb-10">
         <Kpi
-          title="Budget Limit"
+          title="Initial Budget"
           value={`$${budgetLimit.toFixed(2)}`}
           color="blue"
         />
 
+        <Kpi
+          title="Budget Available"
+          value={`$${remainingBudget.toFixed(2)}`}
+          color="green"
+        />
         <Kpi
           title="Committed"
           value={`$${totalCommitted.toFixed(2)}`}
           color="yellow"
         />
 
-        <Kpi
-          title="Remaining Budget"
-          value={`$${remainingBudget.toFixed(2)}`}
-          color={remainingBudget <= budgetLimit * 0.2 ? "red" : "green"}
-        />
+
 
         <Kpi
           title="Pending Orders"
@@ -243,7 +285,7 @@ export default function ProcurementPage() {
         <div className="space-y-2 text-sm text-gray-300">
           <p>Total budget: <span className="font-bold text-white">${budgetLimit.toFixed(2)}</span></p>
           <p>Committed budget: <span className="font-bold text-white">${totalCommitted.toFixed(2)}</span></p>
-          <p>Remaining budget: <span className="font-bold text-white">${remainingBudget.toFixed(2)}</span></p>
+
           <p>Orders in progress: <span className="font-bold text-white">{activeItems.length}</span></p>
           <p>Cancelled orders: <span className="font-bold text-white">{cancelledItems.length}</span></p>
           <p>Delivered orders: <span className="font-bold text-white">{deliveredItems.length}</span></p>
@@ -259,7 +301,7 @@ export default function ProcurementPage() {
           sortedItems.map((item: any) => {
             const totalCost = Number(item.totalCost || item.quantity * item.unitCost || 0);
             const late = isLate(item.expectedDate, item.status);
-
+            const currentStatus = String(item.status || "").trim().toLowerCase();
             return (
               <div
                 key={item._id || item.id}
@@ -303,42 +345,53 @@ export default function ProcurementPage() {
                     </div>
                   </div>
 
+
                   <div className="flex flex-col gap-2 min-w-[220px]">
-                    <button
-                      onClick={() =>
-                        handleStatusChange(item._id || item.id, "Pending Confirmation")
-                      }
-                      className="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded-lg text-sm"
-                    >
-                      Set Pending
-                    </button>
+                    {item.status === "Delivered" ? (
+                      <div className="bg-green-500/10 border border-green-500/30 text-green-300 px-4 py-3 rounded-lg text-sm font-medium text-center">
+                        Order received and marked as Delivered.
+                      </div>
+                    ) : item.status === "Cancelled" ? (
+                      <div className="bg-red-500/10 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm font-medium text-center">
+                        Order has been cancelled.
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() =>
+                            handleStatusChange(item._id || item.id, "Pending Confirmation")
+                          }
+                          className="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded-lg text-sm"
+                        >
+                          Set Pending
+                        </button>
 
-                    <button
-                      onClick={() =>
-                        handleStatusChange(item._id || item.id, "Confirmed")
-                      }
-                      className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm"
-                    >
-                      Confirm
-                    </button>
+                        <button
+                          onClick={() =>
+                            handleStatusChange(item._id || item.id, "Confirmed")
+                          }
+                          className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm"
+                        >
+                          Confirm
+                        </button>
 
-                    <button
-                      onClick={() =>
-                        handleStatusChange(item._id || item.id, "Cancelled")
-                      }
-                      className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-sm"
-                    >
-                      Cancel
-                    </button>
+                        <button
+                          onClick={() =>
+                            handleStatusChangeWithConfirm(item, "Cancelled")
+                          }
+                          className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-sm"
+                        >
+                          Cancel
+                        </button>
 
-                    <button
-                      onClick={() =>
-                        handleStatusChange(item._id || item.id, "Delivered")
-                      }
-                      className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg text-sm"
-                    >
-                      Mark Delivered
-                    </button>
+                        <button
+                          onClick={() => handleMarkDelivered(item)}
+                          className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg text-sm"
+                        >
+                          Mark Delivered
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
