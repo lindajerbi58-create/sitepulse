@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Task from "@/models/task";
 import DailyReportSubmission from "@/models/DailyReportSubmission";
-
+import User from "@/models/user";
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
@@ -106,16 +106,25 @@ export async function PATCH(req: Request, context: RouteContext) {
           reportDate: today,
         });
 
+        const assigneeUser = await User.findById(assigneeId).lean();
+
         if (!report) {
           report = new DailyReportSubmission({
             userId: assigneeId,
             reportDate: today,
-            userFullName: "Unknown user",
-            userRole: "Unknown role",
+            userFullName: assigneeUser?.fullName || "Unknown user",
+            userRole: assigneeUser?.role || "Unknown role",
             entries: [],
           });
-        }
+        } else {
+          if (!report.userFullName || report.userFullName === "Unknown user") {
+            report.userFullName = assigneeUser?.fullName || report.userFullName;
+          }
 
+          if (!report.userRole || report.userRole === "Unknown role") {
+            report.userRole = assigneeUser?.role || report.userRole;
+          }
+        }
         const taskId = String(updatedTask._id || "");
         const existingEntryIndex = report.entries.findIndex(
           (e: any) => String(e.taskId || "") === taskId

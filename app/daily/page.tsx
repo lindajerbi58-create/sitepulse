@@ -45,6 +45,7 @@ export default function DailyReportsPage() {
 
   const allReports = useMemo(() => {
     const localReports = Array.isArray(reports) ? reports : [];
+
     const apiReports = Array.isArray(backendReports)
       ? backendReports.flatMap((r: any) => {
         const baseUserId = r.userId || "";
@@ -57,29 +58,33 @@ export default function DailyReportsPage() {
 
         const entries = Array.isArray(r.entries) ? r.entries : [];
 
-        return entries.map((entry: any, index: number) => ({
-          id: `${r._id || "report"}-${index}`,
-          taskId: entry.taskId || "",
-          userId: baseUserId,
-          userFullName: baseUserFullName,
-          date: entry.timestamp || baseDate,
-          modification: [
-            entry.taskTitle,
+        return entries.map((entry: any, index: number) => {
+          const modificationParts = [
             entry.workDescription,
             entry.comment,
             entry.progress != null ? `Progress: ${entry.progress}%` : null,
-          ]
-            .filter(Boolean)
-            .join(" — "),
-          progress: entry.progress ?? null,
-        }));
+          ].filter(Boolean);
+
+          return {
+            id: `${r._id || "report"}-${index}`,
+            taskId: entry.taskId || "",
+            taskTitle: entry.taskTitle || "Task update",
+            userId: baseUserId,
+            userFullName: baseUserFullName,
+            date: entry.timestamp || baseDate,
+            modification: modificationParts.join(" — "),
+            progress: entry.progress ?? null,
+          };
+        });
       })
       : [];
 
     const localMapped = localReports.map((r: any) => ({
       id: r.id || r._id,
       taskId: r.taskId || r.entry?.taskId || "",
+      taskTitle: r.taskTitle || r.entry?.taskTitle || "Task update",
       userId: r.userId || r.user?._id || r.user?.id || "",
+      userFullName: r.userFullName || r.user?.fullName || "",
       date:
         r.updatedAt ||
         r.createdAt ||
@@ -87,21 +92,26 @@ export default function DailyReportsPage() {
         r.reportDate ||
         new Date().toISOString(),
       modification:
-        r.modification ||
-        r.comment ||
-        r.workDone ||
-        r.entry?.workDescription ||
-        r.entry?.comment ||
-        "No modification provided",
-      progress:
-        r.progress ??
-        r.entry?.progress ??
-        null,
+        [
+          r.modification,
+          r.comment,
+          r.workDone,
+          r.entry?.workDescription,
+          r.entry?.comment,
+          r.entry?.progress != null ? `Progress: ${r.entry.progress}%` : null,
+        ]
+          .filter(Boolean)
+          .join(" — "),
+      progress: r.progress ?? r.entry?.progress ?? null,
     }));
 
     const merged = [...localMapped, ...apiReports];
 
-    const unique = merged.filter(
+    const cleaned = merged.filter(
+      (r) => r.modification && r.modification.trim() !== ""
+    );
+
+    const unique = cleaned.filter(
       (item, index, arr) =>
         index ===
         arr.findIndex(
@@ -132,6 +142,10 @@ export default function DailyReportsPage() {
     filteredReports = visibleReports.filter(
       (r) => normalizeId(r.userId) !== String(currentUserId)
     );
+  }
+
+  if (filterMode === "all") {
+    filteredReports = visibleReports;
   }
 
   const last24hReports = filteredReports
@@ -205,11 +219,12 @@ export default function DailyReportsPage() {
                 <div className="flex justify-between items-start gap-4">
                   <div>
                     <h2 className="text-lg font-semibold">
-                      {task?.title || "Task update"}
+                      {report.taskTitle || task?.title || "Task update"}
                     </h2>
 
                     <p className="text-sm text-gray-400 mt-1">
-                      Name: {report.userFullName || user?.fullName || "Unknown user"}
+                      Name:{" "}
+                      {report.userFullName || user?.fullName || "Unknown user"}
                     </p>
 
                     <p className="text-sm text-gray-500 mt-1">
