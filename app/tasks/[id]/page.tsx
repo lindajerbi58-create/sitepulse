@@ -124,6 +124,8 @@ export default function TaskDetailsPage() {
 
   const loadAllData = async (isRefresh = false) => {
     try {
+      console.log("===== LOAD ALL DATA START =====");
+console.log("isRefresh =", isRefresh);
       if (isRefresh) {
         setRefreshing(true);
       } else {
@@ -134,12 +136,18 @@ export default function TaskDetailsPage() {
 
       const [tasksRes, usersRes, dailyRes, procurementRes, projectsRes] =
         await Promise.all([
+          
           fetch("/api/tasks", { cache: "no-store" }),
           fetch("/api/users", { cache: "no-store" }),
           fetch("/api/daily", { cache: "no-store" }),
           fetch("/api/procurement", { cache: "no-store" }),
           fetch("/api/projects", { cache: "no-store" }),
         ]);
+        console.log("tasksRes.status =", tasksRes.status);
+console.log("usersRes.status =", usersRes.status);
+console.log("dailyRes.status =", dailyRes.status);
+console.log("procurementRes.status =", procurementRes.status);
+console.log("projectsRes.status =", projectsRes.status);
 
       if (!tasksRes.ok) throw new Error("Failed to load tasks");
       if (!usersRes.ok) throw new Error("Failed to load users");
@@ -155,7 +163,11 @@ export default function TaskDetailsPage() {
           procurementRes.json(),
           projectsRes.json(),
         ]);
-
+console.log("tasksData =", tasksData);
+console.log("usersData =", usersData);
+console.log("dailyData =", dailyData);
+console.log("procurementData =", procurementData);
+console.log("projectsData =", projectsData);
       setTasks(
         Array.isArray(tasksData)
           ? tasksData
@@ -177,154 +189,125 @@ export default function TaskDetailsPage() {
     }
   };
 
-  const handleProgressUpdate = async (isComplete = false) => {
-    console.log("NEW HANDLEPROGRESSUPDATE RUNNING");
-    if (!task || !currentUser) return;
 
-    setSavingProgress(true);
-    setProgressMessage("");
+const handleProgressUpdate = async (isComplete = false) => {
+  console.log("========== HANDLE PROGRESS UPDATE START ==========");
 
-    const newProgress = isComplete ? 100 : progressInput;
+  if (!task || !currentUser) {
+    console.log("STOP: missing task/currentUser", { task, currentUser });
+    return;
+  }
 
-    try {
-      const taskId = String(task._id || task.id);
-      const myId = normalizeId(currentUser._id || currentUser.id);
+  setSavingProgress(true);
+  setProgressMessage("");
 
-      const nextStatus = isComplete
-        ? "Complete"
-        : newProgress > 0
-          ? "In Progress"
-          : "Not Started";
+  const newProgress = isComplete ? 100 : progressInput;
 
-      const taskRes = await fetch(`/api/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          progress: newProgress,
-          status: nextStatus,
-        }),
-      });
+  try {
+    const taskId = String(task._id || task.id || "");
+    const myId = String(currentUser?._id || currentUser?.id || "");
 
-      const taskData = await taskRes.json();
+    console.log("taskId =", taskId);
+    console.log("myId =", myId);
+    console.log("currentUser =", currentUser);
+    console.log("newProgress =", newProgress);
 
-      if (!taskRes.ok) {
-        throw new Error(taskData?.message || "Failed to update task");
-      }
+    const nextStatus = isComplete
+      ? "Complete"
+      : newProgress > 0
+      ? "In Progress"
+      : "Not Started";
 
-      const updatedTask = taskData;
+    console.log("nextStatus =", nextStatus);
 
-      const safeTasks = Array.isArray(tasks)
-        ? tasks
-        : Array.isArray((tasks as any)?.tasks)
-          ? (tasks as any).tasks
-          : [];
+    const taskRes = await fetch(`/api/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        progress: newProgress,
+        status: nextStatus,
+      }),
+    });
 
-      const mergedTask = {
-        ...task,
-        ...updatedTask,
-        progress: updatedTask?.progress ?? newProgress,
-        status: updatedTask?.status ?? nextStatus,
-        updatedAt: updatedTask?.updatedAt || new Date().toISOString(),
-      };
+    const taskData = await taskRes.json().catch(() => null);
 
-      const newTasks = safeTasks.map((t: any) =>
-        String(t._id || t.id) === taskId ? mergedTask : t
-      );
+    console.log("PATCH status =", taskRes.status);
+    console.log("PATCH response =", taskData);
 
-      setTasks(newTasks);
-      setProgressInput(Number(mergedTask.progress || 0));
-
-      const creatorId = normalizeId(task.createdById);
-
-      // 🔔 notification (ne doit JAMAIS bloquer)
-      try {
-        if (creatorId && creatorId !== myId) {
-          const notifRes = await fetch("/api/notifications", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              userId: creatorId,
-              taskId,
-              senderId: myId,
-              type: isComplete ? "task_completed" : "task_progress_updated",
-              title: isComplete ? "Task Completed" : "Task Progress Updated",
-              message: `${currentUser.fullName} updated progress to ${newProgress}% on "${task.title}".`,
-            }),
-          });
-
-          console.log("notif status =", notifRes.status);
-        }
-      } catch (e) {
-        console.log("notif error but continue", e);
-      }
-      console.log("🚀 DAILY START");
-
-      // 🟢 DAILY REPORT (TRÈS IMPORTANT)
-      console.log("🚀 sending daily report...");
-
-      const today = new Date().toISOString().split("T")[0];
-
-      const dailyRes = await fetch("/api/daily/report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "ADD_ENTRY",
-          userId: myId,
-          reportDate: today,
-          userFullName: currentUser.fullName || "",
-          userRole: currentUser.role || "",
-          entry: {
-            taskId,
-            taskTitle: task.title || "Untitled task",
-            progress: newProgress,
-            workDescription: workNote || "Updated progress",
-            comment: taskComment || "",
-          },
-        }),
-      });
-
-      const dailyData = await dailyRes.json().catch(() => null);
-
-      console.log("daily status =", dailyRes.status);
-      console.log("daily response =", dailyData);
-
-      if (!dailyRes.ok) {
-        throw new Error(dailyData?.message || "Daily failed");
-      }
-
-      setWorkNote("");
-      setTaskComment("");
-      setProgressMessage("Progress saved successfully.");
-    } catch (err: any) {
-      console.error("handleProgressUpdate error:", err);
-      setProgressMessage(err?.message || "Error updating task.");
-    } finally {
-      setSavingProgress(false);
+    if (!taskRes.ok) {
+      throw new Error(taskData?.message || "Failed to update task");
     }
-  };
 
+    const today = new Date().toISOString().split("T")[0];
+
+    const dailyPayload = {
+      action: "ADD_ENTRY",
+      userId: myId,
+      reportDate: today,
+      userFullName: currentUser?.fullName || "Unknown user",
+      userRole: currentUser?.role || "",
+      entry: {
+        taskId,
+        taskTitle: task.title || "Untitled task",
+        progress: newProgress,
+        workDescription: workNote || "Updated progress",
+        comment: taskComment || "",
+      },
+    };
+
+    console.log("DAILY payload =", dailyPayload);
+
+    const dailyRes = await fetch("/api/daily/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dailyPayload),
+    });
+
+    const dailyData = await dailyRes.json().catch(() => null);
+
+    console.log("POST /api/daily/report status =", dailyRes.status);
+    console.log("POST /api/daily/report response =", dailyData);
+
+    if (!dailyRes.ok) {
+      throw new Error(dailyData?.message || "Daily failed");
+    }
+
+    await loadAllData(true);
+
+    setWorkNote("");
+    setTaskComment("");
+    setProgressMessage("Progress saved successfully.");
+
+    console.log("========== HANDLE PROGRESS UPDATE SUCCESS ==========");
+  } catch (err: any) {
+    console.error("handleProgressUpdate error =", err);
+    setProgressMessage(err?.message || "Error updating task.");
+  } finally {
+    setSavingProgress(false);
+    console.log("========== HANDLE PROGRESS UPDATE END ==========");
+  }
+};
   useEffect(() => {
     if (!mounted) return;
     loadAllData();
   }, [mounted]);
+const task = useMemo(() => {
+  const safeTasks = Array.isArray(tasks)
+    ? tasks
+    : Array.isArray((tasks as any)?.tasks)
+      ? (tasks as any).tasks
+      : [];
 
-  const task = useMemo(() => {
-    const safeTasks = Array.isArray(tasks)
-      ? tasks
-      : Array.isArray((tasks as any)?.tasks)
-        ? (tasks as any).tasks
-        : [];
+  return safeTasks.find(
+    (t: any) => String(t.id || t._id) === String(routeTaskId)
+  );
+}, [tasks, routeTaskId]);
 
-    const t = safeTasks.find(
-      (t: any) => String(t.id || t._id) === String(routeTaskId)
-    );
-
-    if (t && progressInput === 0 && Number(t.progress) > 0) {
-      setProgressInput(Number(t.progress));
-    }
-
-    return t;
-  }, [tasks, routeTaskId]);
+useEffect(() => {
+  if (task && progressInput === 0 && Number(task.progress) > 0) {
+    setProgressInput(Number(task.progress));
+  }
+}, [task]);
 
   const getComputedStatus = (
     item: any,

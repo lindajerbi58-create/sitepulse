@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Notification from "@/models/Notification";
-import connectDB from "@/lib/mongodb";
+import { connectDB } from "@/lib/mongodb";
+
 
 export async function PUT(
   req: NextRequest,

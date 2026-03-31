@@ -450,93 +450,138 @@ export default function TasksPage() {
     });
   };
 
-  const handleUpdateTaskProgress = async (task: Task, forcedProgress?: number) => {
-    const taskId = normalizeId(task);
-    if (!taskId) return;
+ const handleUpdateTaskProgress = async (task: Task, forcedProgress?: number) => {
+  const taskId = normalizeId(task);
+  if (!taskId) return;
 
-    const nextProgressRaw =
-      forcedProgress !== undefined
-        ? forcedProgress
-        : progressInputs[taskId] ?? Number(task.progress || 0);
+  const nextProgressRaw =
+    forcedProgress !== undefined
+      ? forcedProgress
+      : progressInputs[taskId] ?? Number(task.progress || 0);
 
-    const nextProgress = Math.max(0, Math.min(100, Number(nextProgressRaw || 0)));
-    const nextStatus = getManualStatusFromProgress(
-      nextProgress,
-      String(task.status || "")
+  const nextProgress = Math.max(0, Math.min(100, Number(nextProgressRaw || 0)));
+  const nextStatus = getManualStatusFromProgress(
+    nextProgress,
+    String(task.status || "")
+  );
+
+  try {
+    setUpdatingTaskId(taskId);
+    setTaskActionMessage((prev) => ({
+      ...prev,
+      [taskId]: "",
+    }));
+
+    const res = await fetch(`/api/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        progress: nextProgress,
+        status: nextStatus,
+      }),
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => null);
+      throw new Error(errorData?.error || "Failed to update task");
+    }
+
+    const updatedTask = await res.json();
+
+    setTasks(
+      safeTasks.map((existing: Task) =>
+        normalizeId(existing) === taskId
+          ? {
+              ...existing,
+              ...updatedTask,
+              progress: updatedTask?.progress ?? nextProgress,
+              status: updatedTask?.status ?? nextStatus,
+              updatedAt: updatedTask?.updatedAt || new Date().toISOString(),
+            }
+          : existing
+      )
     );
 
-    try {
-      setUpdatingTaskId(taskId);
-      setTaskActionMessage((prev) => ({
-        ...prev,
-        [taskId]: "",
-      }));
+    setProgressInputs((prev) => ({
+      ...prev,
+      [taskId]: updatedTask?.progress ?? nextProgress,
+    }));
 
-      const res = await fetch(`/api/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          progress: nextProgress,
-          status: nextStatus,
-        }),
-      });
+    const myId = String(currentUser?._id || currentUser?.id || "");
+    const today = new Date().toISOString().split("T")[0];
 
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => null);
-        throw new Error(errorData?.error || "Failed to update task");
-      }
+    console.log("currentUser =", currentUser);
+    console.log("myId =", myId);
+    console.log("taskId =", taskId);
 
-      const updatedTask = await res.json();
-
-      setTasks(
-        safeTasks.map((existing: Task) =>
-          normalizeId(existing) === taskId
-            ? {
-                ...existing,
-                ...updatedTask,
-                progress: updatedTask?.progress ?? nextProgress,
-                status: updatedTask?.status ?? nextStatus,
-                updatedAt: updatedTask?.updatedAt || new Date().toISOString(),
-              }
-            : existing
-        )
-      );
-
-      setProgressInputs((prev) => ({
-        ...prev,
-        [taskId]: updatedTask?.progress ?? nextProgress,
-      }));
-
-      await sendProgressNotification(
-        {
-          ...task,
-          ...updatedTask,
-          progress: updatedTask?.progress ?? nextProgress,
-          status: updatedTask?.status ?? nextStatus,
-        },
-        updatedTask?.progress ?? nextProgress,
-        (updatedTask?.status ?? nextStatus) as TaskStatus
-      );
-
-      setTaskActionMessage((prev) => ({
-        ...prev,
-        [taskId]:
-          nextProgress >= 100
-            ? "Task marked as complete."
-            : "Progress updated successfully.",
-      }));
-    } catch (err: any) {
-      setTaskActionMessage((prev) => ({
-        ...prev,
-        [taskId]: err?.message || "Unable to update task.",
-      }));
-    } finally {
-      setUpdatingTaskId(null);
+    if (!myId) {
+      throw new Error("Current user not found");
     }
-  };
 
+    const dailyPayload = {
+      action: "ADD_ENTRY",
+      userId: myId,
+      reportDate: today,
+      userFullName: currentUser?.fullName || "Unknown user",
+      userRole: currentUser?.role || "",
+      entry: {
+        taskId,
+        taskTitle: task.title || updatedTask?.title || "Untitled task",
+        progress: updatedTask?.progress ?? nextProgress,
+        workDescription: "Updated progress",
+        comment: `Status: ${updatedTask?.status ?? nextStatus}`,
+      },
+    };
+
+    console.log("POST /api/daily/report payload =", dailyPayload);
+
+    const dailyRes = await fetch("/api/daily/report", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(dailyPayload),
+    });
+
+    const dailyData = await dailyRes.json().catch(() => null);
+
+    console.log("POST /api/daily/report status =", dailyRes.status);
+    console.log("POST /api/daily/report response =", dailyData);
+
+    if (!dailyRes.ok) {
+      throw new Error(dailyData?.message || "Failed to save daily report");
+    }
+
+    await sendProgressNotification(
+      {
+        ...task,
+        ...updatedTask,
+        progress: updatedTask?.progress ?? nextProgress,
+        status: updatedTask?.status ?? nextStatus,
+      },
+      updatedTask?.progress ?? nextProgress,
+      (updatedTask?.status ?? nextStatus) as TaskStatus
+    );
+
+    setTaskActionMessage((prev) => ({
+      ...prev,
+      [taskId]:
+        nextProgress >= 100
+          ? "Task marked as complete."
+          : "Progress updated successfully.",
+    }));
+  } catch (err: any) {
+    console.error("handleUpdateTaskProgress error =", err);
+    setTaskActionMessage((prev) => ({
+      ...prev,
+      [taskId]: err?.message || "Unable to update task.",
+    }));
+  } finally {
+    setUpdatingTaskId(null);
+  }
+};
   const activeRootTasks = useMemo(() => {
     return visibleRootTasks.filter((task: Task) => {
       const displayedStatus = getComputedStatus(task, safeTasks);

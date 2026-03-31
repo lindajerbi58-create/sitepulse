@@ -33,10 +33,12 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  console.log("========== POST /api/daily/report START ==========");
   try {
     await connectDB();
 
     const body = await req.json();
+    console.log("BODY RECEIVED =", body);
 
     const {
       userId,
@@ -50,7 +52,10 @@ export async function POST(req: NextRequest) {
       userFullName,
       userRole,
     } = body;
-
+console.log("action =", action);
+console.log("userId =", userId);
+console.log("reportDate =", reportDate);
+console.log("entry =", entry);
     if (!userId || !reportDate) {
       return NextResponse.json(
         { message: "userId and reportDate required" },
@@ -62,21 +67,23 @@ export async function POST(req: NextRequest) {
       userId: String(userId),
       reportDate: String(reportDate),
     });
+    console.log("existing report =", report);
 
-    if (!report) {
-      report = new DailyReportSubmission({
-        userId: String(userId),
-        reportDate: String(reportDate),
-        userFullName: userFullName || "Unknown user",
-        userRole: userRole || "",
-        entries: [],
-        generalComment: "",
-        superiorEmail: "",
-        superiorId: "",
-        isSent: false,
-      });
-    }
+ if (!report) {
+  report = new DailyReportSubmission({
+    userId: String(userId),
+    reportDate: String(reportDate),
+    userFullName: userFullName || "Unknown user",
+    userRole: userRole || "",
+    entries: [],
+    generalComment: "",
+    superiorEmail: "",
+    superiorId: "",
+    isSent: false,
+  });
 
+  console.log("new report created =", report);
+}
     if (action === "ADD_ENTRY") {
       if (!entry || !entry.taskId) {
         return NextResponse.json(
@@ -96,7 +103,8 @@ export async function POST(req: NextRequest) {
         comment: String(entry.comment || ""),
         timestamp: entry.timestamp || new Date().toISOString(),
       };
-
+console.log("normalizedEntry =", normalizedEntry);
+console.log("entries before update =", report.entries);
       const existingEntryIndex = report.entries.findIndex(
         (e: any) => String(e.taskId) === String(normalizedEntry.taskId)
       );
@@ -109,7 +117,8 @@ export async function POST(req: NextRequest) {
       } else {
         report.entries.push(normalizedEntry as any);
       }
-
+console.log("existingEntryIndex =", existingEntryIndex);
+console.log("entries after update =", report.entries);
       if (userFullName !== undefined) {
         report.userFullName = userFullName || report.userFullName || "Unknown user";
       }
@@ -139,7 +148,7 @@ export async function POST(req: NextRequest) {
       entriesCount: report.entries?.length || 0,
       entries: report.entries,
     });
-
+console.log("========== POST /api/daily/report SUCCESS ==========");
     return NextResponse.json(report, { status: 200 });
   } catch (error: any) {
     console.error("POST /api/daily/report error:", error);

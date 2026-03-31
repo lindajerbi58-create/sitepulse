@@ -11,13 +11,23 @@ import autoTable from "jspdf-autotable";
 export default function DailyReportsPage() {
   const { reports } = useDailyReportStore();
   const { tasks } = useTaskStore();
-
+const setCurrentUser = useUserStore((state) => state.setCurrentUser);
   const currentUser = useUserStore((state) => state.currentUser);
   const users = useUserStore((state) => state.users);
-  const currentUserId = currentUser?._id || "";
 
+const currentUserId = String(currentUser?._id || "");
   const [backendReports, setBackendReports] = useState<any[]>([]);
-  const [filterMode, setFilterMode] = useState<"my" | "team" | "all">("team");
+  const [filterMode, setFilterMode] = useState<"my" | "team" | "all">("all");
+  console.log("currentUser =", currentUser);
+console.log("currentUserId =", currentUserId);
+console.log(
+  "report userIds =",
+  backendReports.map((r: any) => r.userId)
+);
+console.log(
+  "users ids =",
+  users.map((u: any) => String(u._id || u.id || ""))
+);
   const exportDailyReportPDF = () => {
     const doc = new jsPDF();
 
@@ -70,19 +80,19 @@ export default function DailyReportsPage() {
 
     doc.save(`daily-reports-${new Date().toISOString().split("T")[0]}.pdf`);
   };
-  useEffect(() => {
-    const fetchReports = async () => {
-      try {
-        const res = await fetch("/api/daily", { cache: "no-store" });
-        const data = await res.json();
-        setBackendReports(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error("Failed to fetch daily reports", err);
-      }
-    };
+ useEffect(() => {
+  const fetchReports = async () => {
+    try {
+      const res = await fetch("/api/daily", { cache: "no-store" });
+      const data = await res.json();
+      setBackendReports(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch daily reports", err);
+    }
+  };
 
-    fetchReports();
-  }, []);
+  fetchReports();
+}, []);
 
   const normalizeId = (value: any) =>
     String(value?._id || value?.id || value || "");
@@ -178,9 +188,7 @@ export default function DailyReportsPage() {
 
   if (!currentUserId) return null;
 
-  const visibleReports = allReports.filter((report) =>
-    canAssign(currentUserId, report.userId, users)
-  );
+const visibleReports = allReports;
 
   let filteredReports = visibleReports;
 
@@ -199,26 +207,20 @@ export default function DailyReportsPage() {
   if (filterMode === "all") {
     filteredReports = visibleReports;
   }
-
-  const last24hReports = filteredReports
-    .filter((report) => {
-      const d = safeDate(report.date);
-      return d && d >= last24h && d <= now;
-    })
-    .sort((a, b) => {
-      const aTime = safeDate(a.date)?.getTime() || 0;
-      const bTime = safeDate(b.date)?.getTime() || 0;
-      return bTime - aTime;
-    });
-
+console.log("currentUserId =", currentUserId);
+console.log("allReports =", allReports);
+console.log("visibleReports =", visibleReports);
+console.log("filteredReports =", filteredReports);
+const last24hReports = filteredReports;
+console.log("last24hReports =", last24hReports);
   return (
     <div className="min-h-screen bg-[#0b1220] text-white p-8">
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-2xl font-bold">Daily Reports</h1>
           <p className="text-sm text-gray-400 mt-1">
-            Last 24 hours changes
-          </p>
+  All visible changes
+</p>
         </div>
 
         <div className="flex gap-4">

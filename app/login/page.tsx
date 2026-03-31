@@ -8,7 +8,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const router = useRouter();
-
+const setCurrentUser = useUserStore((state) => state.setCurrentUser);
   const loginStore = useUserStore((state) => state.login);
 
   return (
@@ -92,7 +92,7 @@ export default function LoginPage() {
                   alert(data.message);
                   return;
                 }
-
+setCurrentUser(data.user);
                 // Sauvegarder user dans Zustand
                 loginStore(data.user);
 
