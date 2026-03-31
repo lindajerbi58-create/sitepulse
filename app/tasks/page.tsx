@@ -364,14 +364,22 @@ export default function TasksPage() {
 
     const baseNodes = leafNodes.length > 0 ? leafNodes : directChildren;
 
-    const total = baseNodes.length;
-    const completed = baseNodes.filter(
-      (node: Task) => getComputedStatus(node, tasks) === "Complete"
-    ).length;
+    if (baseNodes.length === 0) return 0;
 
-    return total > 0 ? Math.round((completed / total) * 100) : 0;
+    const totalProgress = baseNodes.reduce((sum: number, node: Task) => {
+      const status = getComputedStatus(node, tasks);
+
+      if (status === "Complete") return sum + 100;
+      if (status === "Not Started") return sum + 0;
+      if (status === "On Hold") {
+        return sum + Math.min(Math.max(Number(node.progress || 0), 0), 100);
+      }
+
+      return sum + Math.min(Math.max(Number(node.progress || 0), 0), 100);
+    }, 0);
+
+    return Math.round(totalProgress / baseNodes.length);
   };
-
   const isLeafTask = (item: Task) => {
     const itemId = normalizeId(item);
     return getDirectChildren(itemId, tasks).length === 0;
@@ -423,7 +431,7 @@ export default function TasksPage() {
       body: JSON.stringify({
         userId: creatorId,
         taskId: normalizeId(task),
-        actorUserId: actorId,
+        senderId: actorId,
         type,
         title,
         message,
@@ -468,8 +476,14 @@ export default function TasksPage() {
 
       const updatedTask = await res.json();
 
-      setTasks((prev: Task[]) =>
-        prev.map((existing: Task) =>
+      const safeTasks = Array.isArray(tasks)
+        ? tasks
+        : Array.isArray((tasks as any)?.tasks)
+          ? (tasks as any).tasks
+          : [];
+
+      setTasks(
+        safeTasks.map((existing: Task) =>
           normalizeId(existing) === taskId
             ? {
               ...existing,
@@ -481,7 +495,6 @@ export default function TasksPage() {
             : existing
         )
       );
-
       setProgressInputs((prev) => ({
         ...prev,
         [taskId]: updatedTask?.progress ?? nextProgress,

@@ -29,20 +29,37 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-
 export async function POST(req: NextRequest) {
   try {
     await connectDB();
 
     const body = await req.json();
+    console.log("notification body =", body);
+
+    const senderId = String(body.senderId || "");
+
+
+    if (!body.userId) {
+      return NextResponse.json(
+        { error: "userId is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!senderId) {
+      return NextResponse.json(
+        { error: "senderId is required" },
+        { status: 400 }
+      );
+    }
 
     const notification = await Notification.create({
       userId: String(body.userId || ""),
       taskId: String(body.taskId || ""),
-      senderId: String(body.senderId || ""),
-      type: body.type || "task_progress_updated",
-      title: body.title || "Notification",
-      message: body.message || "",
+      senderId,
+      type: String(body.type || "task_progress_updated"),
+      title: String(body.title || "Notification"),
+      message: String(body.message || ""),
       isRead: false,
       meta: body.meta || {},
     });
