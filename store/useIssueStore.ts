@@ -1,54 +1,49 @@
 import { create } from "zustand";
-import { Issue } from "@/types/issue";
 
-interface IssueStore {
+type Issue = any;
+
+type IssueStore = {
   issues: Issue[];
-
-  addIssue: (issue: Issue) => Promise<void>;
-  updateIssue: (id: string, patch: Partial<Issue>) => Promise<void>;
-
   setIssues: (issues: Issue[]) => void;
-}
+  addIssue: (issue: Issue) => void;
+  updateIssue: (id: string, updates: Partial<Issue>) => void;
+};
 
-export const useIssueStore = create<IssueStore>()((set) => ({
+const normalizeId = (value: any) => String(value?._id || value?.id || value || "");
+
+export const useIssueStore = create<IssueStore>((set) => ({
   issues: [],
 
-  setIssues: (issues) => set({ issues }),
+  setIssues: (issues) => {
+    const map = new Map<string, Issue>();
 
-  addIssue: async (issue) => {
-    try {
-      const res = await fetch("/api/issues", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(issue),
-      });
-      if (res.ok) {
-        const newIssue = await res.json();
-        set((state) => ({ issues: [...state.issues, newIssue] }));
-      }
-    } catch (error) {
-      console.error("Failed to add issue:", error);
+    for (const issue of issues || []) {
+      const id = normalizeId(issue);
+      if (!id) continue;
+      map.set(id, { ...issue, id });
     }
+
+    set({ issues: Array.from(map.values()) });
   },
 
-  updateIssue: async (id, patch) => {
-    // Optimistic update
+  addIssue: (issue) =>
+    set((state) => {
+      const id = normalizeId(issue);
+      const exists = state.issues.some((i) => normalizeId(i) === id);
+
+      if (exists) return state;
+
+      return {
+        issues: [...state.issues, { ...issue, id }],
+      };
+    }),
+
+  updateIssue: (id, updates) =>
     set((state) => ({
       issues: state.issues.map((issue) =>
-        issue._id === id || issue.id === id ? { ...issue, ...patch } : issue
+        normalizeId(issue) === String(id)
+          ? { ...issue, ...updates }
+          : issue
       ),
-    }));
-    try {
-      const res = await fetch(`/api/issues/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      if (!res.ok) {
-        console.error("Failed to update issue on backend");
-      }
-    } catch (error) {
-      console.error("Failed to update issue:", error);
-    }
-  },
+    })),
 }));

@@ -1,27 +1,36 @@
-import mongoose from "mongoose";
+import mongoose, { Schema, models, model } from "mongoose";
 
-const IssueSchema = new mongoose.Schema({
-  title: { type: String, required: true },
-  description: String,
+const IssueSchema = new Schema(
+  {
+    title: { type: String, required: true, trim: true },
+    description: { type: String, required: true, trim: true },
 
-  taskId: { type: String, required: true },
-  projectId: { type: String, required: true },
+    category: { type: String, required: true, trim: true },
+    customCategory: { type: String, default: "", trim: true },
 
-  ownerId: { type: String, required: true },
+    priority: {
+      type: String,
+      enum: ["Low", "Medium", "High"],
+      default: "Medium",
+    },
 
-  category: String,
-  dueDate: String,
+    status: {
+      type: String,
+      enum: ["Open", "Resolved"],
+      default: "Open",
+    },
 
-  status: {
-    type: String,
-    enum: ["Open", "Resolved"],
-    default: "Open",
+    taskId: { type: String, required: true },
+    projectId: { type: String, required: true },
+
+    createdById: { type: String, required: true },
+    ownerId: { type: String, default: "" },
+
+    dueDate: { type: String, required: true },
+    resolvedAt: { type: String, default: "" },
+    resolutionNote: { type: String, default: "" },
   },
+  { timestamps: true }
+);
 
-  resolvedAt: String,
-
-  createdAt: { type: String, required: true },
-});
-
-export default mongoose.models.Issue ||
-  mongoose.model("Issue", IssueSchema);
+export default models.Issue || model("Issue", IssueSchema);
