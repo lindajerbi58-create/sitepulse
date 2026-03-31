@@ -46,49 +46,33 @@ export default function DailyReportsPage() {
   const allReports = useMemo(() => {
     const localReports = Array.isArray(reports) ? reports : [];
     const apiReports = Array.isArray(backendReports)
-      ? backendReports.flatMap((r) => {
+      ? backendReports.flatMap((r: any) => {
+        const baseUserId = r.userId || "";
+        const baseUserFullName = r.userFullName || "Unknown user";
         const baseDate =
           r.updatedAt ||
           r.createdAt ||
-          r.date ||
           r.reportDate ||
           new Date().toISOString();
 
-        const baseUserId =
-          r.userId || r.user?._id || r.user?.id || "";
-
         const entries = Array.isArray(r.entries) ? r.entries : [];
 
-        if (entries.length > 0) {
-          return entries.map((entry: any, index: number) => ({
-            id: `${r._id || r.id || "report"}-${index}`,
-            taskId: entry.taskId || r.taskId || "",
-            userId: baseUserId,
-            date: entry.timestamp || entry.createdAt || entry.updatedAt || baseDate,
-            modification:
-              [entry.taskTitle, entry.workDescription, entry.comment]
-                .filter(Boolean)
-                .join(" — ") ||
-              r.workDone ||
-              r.comment ||
-              "No modification provided",
-          }));
-        }
-
-        return [
-          {
-            id: r._id || r.id,
-            taskId: r.taskId || "",
-            userId: baseUserId,
-            date: baseDate,
-            modification:
-              r.modification ||
-              r.workDone ||
-              r.comment ||
-              "No modification provided",
-            progress: r.progress ?? null,
-          },
-        ];
+        return entries.map((entry: any, index: number) => ({
+          id: `${r._id || "report"}-${index}`,
+          taskId: entry.taskId || "",
+          userId: baseUserId,
+          userFullName: baseUserFullName,
+          date: entry.timestamp || baseDate,
+          modification: [
+            entry.taskTitle,
+            entry.workDescription,
+            entry.comment,
+            entry.progress != null ? `Progress: ${entry.progress}%` : null,
+          ]
+            .filter(Boolean)
+            .join(" — "),
+          progress: entry.progress ?? null,
+        }));
       })
       : [];
 
@@ -225,7 +209,7 @@ export default function DailyReportsPage() {
                     </h2>
 
                     <p className="text-sm text-gray-400 mt-1">
-                      Name: {user?.fullName || "Unknown user"}
+                      Name: {report.userFullName || user?.fullName || "Unknown user"}
                     </p>
 
                     <p className="text-sm text-gray-500 mt-1">
