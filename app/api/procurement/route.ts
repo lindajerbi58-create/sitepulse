@@ -1,33 +1,125 @@
-import mongoose, { Schema, models } from "mongoose";
+import { NextResponse } from "next/server";
+import { connectDB } from "@/lib/mongodb";
+import Procurement from "@/models/procurement";
 
-const ProcurementSchema = new Schema(
-  {
-    id: { type: String, required: true, unique: true },
-    projectId: { type: String, default: "" },
+const BUDGET_LIMIT = 100000;
 
-    title: { type: String, required: true },
-    supplier: { type: String, default: "" },
-    category: { type: String, default: "Other" },
+export async function GET() {
+  try {
+    await connectDB();
 
-    quantity: { type: Number, required: true, min: 1 },
-    unitCost: { type: Number, required: true, min: 0 },
-    totalCost: { type: Number, required: true, min: 0 },
+    const items = await Procurement.find().sort({ createdAt: 1 });
 
-    expectedDate: { type: String, required: true },
-    priority: { type: String, default: "Medium" },
+    return NextResponse.json({
+      items,
+      budgetLimit: BUDGET_LIMIT,
+    });
+  } catch (error: any) {
+    console.error("GET /api/procurement error =", error);
 
-    // Pending Confirmation / Confirmed / Cancelled / Delivered
-    status: { type: String, default: "Pending Confirmation" },
+    return NextResponse.json(
+      { message: error.message || "Failed to fetch procurement items" },
+      { status: 500 }
+    );
+  }
+}
 
-    note: { type: String, default: "" },
+export async function POST(req: Request) {
+  try {
+    await connectDB();
 
-    createdAt: { type: String, required: true },
-    updatedAt: { type: String, default: "" },
-  },
-  { versionKey: false }
-);
+    const body = await req.json();
 
-const Procurement =
-  models.Procurement || mongoose.model("Procurement", ProcurementSchema);
+    if (
+      !body?.id ||
+      !body?.title ||
+      body?.quantity == null ||
+      body?.unitCost == null ||
+      !body?.expectedDate ||
+      !body?.createdAt
+    ) {
+      return NextResponse.json(
+        { message: "Missing required fields" },
+        { status: 400 }
+      );
+    }
 
-export default Procurement;
+    const exists = await Procurement.findOne({ id: body.id });
+
+    if (exists) {
+      return NextResponse.json(
+        { message: "Procurement item already exists" },
+        { status: 400 }
+      );
+    }
+
+    const quantity = Number(body.quantity);
+    const unitCost = Number(body.unitCost);
+
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return NextResponse.json(
+        { message: "Quantity must be greater than 0" },
+        { status: 400 }
+      );
+    }
+
+    if (!Number.isFinite(unitCost) || unitCost < 0) {
+      return NextResponse.json(
+        { message: "Unit cost must be valid" },
+        { status: 400 }
+      );
+    }
+
+    const totalCost = quantity * unitCost;
+
+    const existingItems = await Procurement.find({
+      status: { $in: ["Pending Confirmation", "Confirmed", "Delivered"] },
+    });
+
+    const alreadyCommitted = existingItems.reduce(
+      (sum, item: any) =>
+        sum + Number(item.totalCost || Number(item.quantity) * Number(item.unitCost) || 0),
+      0
+    );
+
+    const remainingBudget = BUDGET_LIMIT - alreadyCommitted;
+
+    if (totalCost > remainingBudget) {
+      return NextResponse.json(
+        {
+          message:
+            "We do not have the necessary budget for these prices.",
+          remainingBudget,
+          requestedCost: totalCost,
+        },
+        { status: 400 }
+      );
+    }
+
+    const newItem = await Procurement.create({
+      id: body.id,
+      projectId: body.projectId || "",
+      title: body.title,
+      supplier: body.supplier || "",
+      category: body.category || "Other",
+      quantity,
+      unitCost,
+      totalCost,
+      expectedDate: body.expectedDate,
+      priority: body.priority || "Medium",
+      status: body.status || "Pending Confirmation",
+      note: body.note || "",
+      createdAt: body.createdAt,
+      updatedAt: body.updatedAt || new Date().toISOString(),
+    });
+
+    return NextResponse.json(newItem, { status: 201 });
+  } catch (error: any) {
+    console.error("POST /api/procurement error =", error);
+
+    return NextResponse.json(
+      { message: error.message || "Failed to create procurement item" },
+      { status: 500 }
+    );
+  }
+}

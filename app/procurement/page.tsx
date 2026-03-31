@@ -69,34 +69,46 @@ export default function ProcurementPage() {
 
     fetchItems();
   }, [setItems, setBudgetLimit]);
-
+  const normalizeStatus = (status: string) =>
+    String(status || "").trim().toLowerCase();
   const activeItems = useMemo(() => {
-    return items.filter((item: any) =>
-      ["Pending Confirmation", "Confirmed", "Delivered"].includes(item.status)
-    );
+    return items.filter((item: any) => {
+      const status = normalizeStatus(item.status);
+      return status !== "cancelled";
+    });
   }, [items]);
 
   const pendingItems = useMemo(() => {
-    return items.filter((item: any) => item.status === "Pending Confirmation");
+    return items.filter(
+      (item: any) => normalizeStatus(item.status) === "pending confirmation"
+    );
   }, [items]);
 
   const confirmedItems = useMemo(() => {
-    return items.filter((item: any) => item.status === "Confirmed");
+    return items.filter(
+      (item: any) => normalizeStatus(item.status) === "confirmed"
+    );
   }, [items]);
 
   const cancelledItems = useMemo(() => {
-    return items.filter((item: any) => item.status === "Cancelled");
+    return items.filter(
+      (item: any) => normalizeStatus(item.status) === "cancelled"
+    );
   }, [items]);
 
   const deliveredItems = useMemo(() => {
-    return items.filter((item: any) => item.status === "Delivered");
+    return items.filter(
+      (item: any) => normalizeStatus(item.status) === "delivered"
+    );
   }, [items]);
 
   const totalCommitted = useMemo(() => {
-    return activeItems.reduce(
-      (sum: number, item: any) => sum + Number(item.totalCost || item.quantity * item.unitCost || 0),
-      0
-    );
+    return activeItems.reduce((sum: number, item: any) => {
+      const qty = Number(item.quantity || 0);
+      const unit = Number(item.unitCost || 0);
+      const total = Number(item.totalCost);
+      return sum + total;
+    }, 0);
   }, [activeItems]);
 
   const totalPending = useMemo(() => {
@@ -113,7 +125,9 @@ export default function ProcurementPage() {
     );
   }, [confirmedItems]);
 
-  const remainingBudget = Math.max(budgetLimit - totalCommitted, 0);
+  const remainingBudget = useMemo(() => {
+    return Math.max(Number(budgetLimit || 0) - Number(totalCommitted || 0), 0);
+  }, [budgetLimit, totalCommitted]);
 
   const sortedItems = [...items].sort(
     (a: any, b: any) =>
