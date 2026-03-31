@@ -1,0 +1,14 @@
+[33mfe1d8a2[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Order Status
+[33m5ffaba7[m procurement modfied
+[33m4b3438e[m Procrument updates
+[33m3b0db6a[m Exporting pdf reports
+[33m2cfbb34[m Adding daily reports automatically
+[33m624e50a[m Adding daily reports automatically
+[33m3570d5b[m Adding daily reports automatically
+[33m3e725bb[m Add task progress update and notifications
+[33mc01ed8e[m Backup before Antigravity
+[33m6714868[m Finalize task pages
+[33mdf4e80f[m Finalize task details page and dashboard fixes
+[33mb20ca57[m feat(tasks): add edit task and auto-complete task when all subtasks are done
+[33mcdeee4e[m update README.md
+[33m470c488[m initial commit
