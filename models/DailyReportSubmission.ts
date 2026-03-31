@@ -1,21 +1,24 @@
 import mongoose from "mongoose";
 
+const DailyReportEntrySchema = new mongoose.Schema(
+  {
+    taskId: { type: String, default: "" },
+    taskTitle: { type: String, default: "Task update" },
+    progress: { type: Number, default: null },
+    workDescription: { type: String, default: "" },
+    comment: { type: String, default: "" },
+    timestamp: { type: String, default: () => new Date().toISOString() },
+  },
+  { _id: false }
+);
+
 const DailyReportSubmissionSchema = new mongoose.Schema(
   {
     userId: { type: String, required: true },
-    userFullName: { type: String, required: true },
-    userRole: { type: String, required: true },
+    userFullName: { type: String, default: "Unknown user" },
+    userRole: { type: String, default: "" },
     reportDate: { type: String, required: true },
-    entries: [
-      {
-        taskId: String,
-        taskTitle: String,
-        progress: Number,
-        workDescription: String,
-        comment: String,
-        timestamp: String,
-      },
-    ],
+    entries: { type: [DailyReportEntrySchema], default: [] },
     generalComment: { type: String, default: "" },
     superiorEmail: { type: String, default: "" },
     superiorId: { type: String, default: "" },
@@ -24,5 +27,13 @@ const DailyReportSubmissionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.models.DailyReportSubmission ||
+DailyReportSubmissionSchema.index(
+  { userId: 1, reportDate: 1 },
+  { unique: true }
+);
+
+const DailyReportSubmission =
+  mongoose.models.DailyReportSubmission ||
   mongoose.model("DailyReportSubmission", DailyReportSubmissionSchema);
+
+export default DailyReportSubmission;

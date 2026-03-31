@@ -16,17 +16,18 @@ export async function GET(
 
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectDB();
 
+    const { id } = await context.params;
     const body = await req.json();
 
     const updatedTask = await Task.findByIdAndUpdate(
-      params.id,
+      id,
       body,
-      { new: true }
+      { returnDocument: "after" }
     );
 
     return NextResponse.json(updatedTask);
@@ -36,6 +37,8 @@ export async function PATCH(
       { status: 500 }
     );
   }
+
+   
 }
 
 const normalizeId = (value: any) =>

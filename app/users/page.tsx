@@ -696,9 +696,27 @@ export default function UsersPage() {
 
                   <div className="flex items-center justify-between">
                     <span className="text-gray-400">Delayed Tasks</span>
-                    <span className="font-medium text-gray-200">
-                      {user.delayedTasks.length}
-                    </span>
+                  {user.delayedTasks.length > 0 && (
+  <div className="mt-2 text-xs text-red-400 space-y-2">
+    {user.delayedTasks.map((t: any) => (
+      <div key={normalizeId(t)}>
+        <div>
+          • {t.title} ({String(t.status || "No status")})
+        </div>
+        <div className="text-gray-400">
+          taskId: {normalizeId(t)} | projectId: {normalizeId(t?.projectId)}
+        </div>
+        <Link
+          href={`/tasks/${normalizeId(t)}`}
+          className="inline-block text-blue-400 hover:text-blue-300 underline"
+        >
+          Open this task
+        </Link>
+      </div>
+    ))}
+  </div>
+)}
+
                   </div>
 
                   <div className="flex items-center justify-between">
