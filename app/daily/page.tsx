@@ -6,7 +6,8 @@ import { useTaskStore } from "@/store/useTaskStore";
 import { useUserStore } from "@/store/useUserStore";
 import { canAssign } from "@/lib/hierarchy";
 import Link from "next/link";
-
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 export default function DailyReportsPage() {
   const { reports } = useDailyReportStore();
   const { tasks } = useTaskStore();
@@ -17,7 +18,58 @@ export default function DailyReportsPage() {
 
   const [backendReports, setBackendReports] = useState<any[]>([]);
   const [filterMode, setFilterMode] = useState<"my" | "team" | "all">("team");
+  const exportDailyReportPDF = () => {
+    const doc = new jsPDF();
 
+    doc.setFontSize(18);
+    doc.text("Daily Reports", 14, 18);
+
+    doc.setFontSize(11);
+    doc.text("Last 24 hours changes", 14, 26);
+
+    const rows = last24hReports.map((report) => {
+      const user = users.find(
+        (u: any) => normalizeId(u) === normalizeId(report.userId)
+      );
+
+      const displayName =
+        report.userFullName && report.userFullName !== "Unknown user"
+          ? report.userFullName
+          : user?.fullName || "Unknown user";
+
+      return [
+        report.taskTitle || "Task update",
+        displayName,
+        safeDate(report.date)?.toLocaleString() || "N/A",
+        report.progress != null ? `${report.progress}%` : "-",
+        report.modification || "-",
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 34,
+      head: [["Task", "Name", "Date", "Progress", "Modification"]],
+      body: rows,
+      styles: {
+        fontSize: 10,
+        cellPadding: 3,
+        overflow: "linebreak",
+        valign: "top",
+      },
+      headStyles: {
+        fillColor: [30, 41, 59],
+      },
+      columnStyles: {
+        0: { cellWidth: 35 },
+        1: { cellWidth: 28 },
+        2: { cellWidth: 38 },
+        3: { cellWidth: 20 },
+        4: { cellWidth: 65 },
+      },
+    });
+
+    doc.save(`daily-reports-${new Date().toISOString().split("T")[0]}.pdf`);
+  };
   useEffect(() => {
     const fetchReports = async () => {
       try {
@@ -180,12 +232,12 @@ export default function DailyReportsPage() {
             <option value="all">All Visible</option>
           </select>
 
-          <Link
-            href="/daily/new"
-            className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg"
+          <button
+            onClick={exportDailyReportPDF}
+            className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg"
           >
-            + New Report
-          </Link>
+            Export PDF
+          </button>
         </div>
       </div>
 
@@ -222,10 +274,18 @@ export default function DailyReportsPage() {
                       {report.taskTitle || task?.title || "Task update"}
                     </h2>
 
-                    <p className="text-sm text-gray-400 mt-1">
-                      Name:{" "}
-                      {report.userFullName || user?.fullName || "Unknown user"}
-                    </p>
+                    {(() => {
+                      const displayName =
+                        report.userFullName && report.userFullName !== "Unknown user"
+                          ? report.userFullName
+                          : user?.fullName || "Unknown user";
+
+                      return (
+                        <p className="text-sm text-gray-400 mt-1">
+                          Name: {displayName}
+                        </p>
+                      );
+                    })()}
 
                     <p className="text-sm text-gray-500 mt-1">
                       Date: {safeDate(report.date)?.toLocaleString() || "N/A"}
