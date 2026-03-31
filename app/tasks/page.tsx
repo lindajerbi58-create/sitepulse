@@ -6,6 +6,9 @@ import { useRouter } from "next/navigation";
 import { predictDelay } from "@/lib/delayPredictor";
 import { useProjectStore } from "@/store/useProjectStore";
 import { useUserStore } from "@/store/useUserStore";
+import { useTaskStore } from "@/store/useTaskStore";
+import { useDailyReportStore } from "@/store/useDailyReportStore";
+import { useProcurementStore } from "@/store/useProcurementStore";
 
 type ViewMode = "my" | "assigned" | "all";
 
@@ -61,19 +64,16 @@ type Project = {
 export default function TasksPage() {
   const router = useRouter();
 
-  const currentUser = useUserStore((state: any) => state.currentUser);
-  const { currentProjectId, setCurrentProjectId } = useProjectStore() as any;
+  const { currentUser, setUsers, users } = useUserStore() as any;
+  const { currentProjectId, setCurrentProjectId, setProjects, projects } =
+    useProjectStore() as any;
+  const { tasks, setTasks } = useTaskStore() as any;
+  const { reports, setReports } = useDailyReportStore() as any;
+  const { items: procurementItems, setItems: setProcurementItems } =
+    useProcurementStore() as any;
 
   const [viewMode, setViewMode] = useState<ViewMode>("all");
   const [mounted, setMounted] = useState(false);
-
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [reports, setReports] = useState<Report[]>([]);
-  const [procurementItems, setProcurementItems] = useState<ProcurementItem[]>(
-    []
-  );
-  const [projects, setProjects] = useState<Project[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -82,6 +82,13 @@ export default function TasksPage() {
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>(
     {}
   );
+  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
+  const [progressInputs, setProgressInputs] = useState<Record<string, number>>(
+    {}
+  );
+  const [taskActionMessage, setTaskActionMessage] = useState<
+    Record<string, string>
+  >({});
 
   useEffect(() => {
     setMounted(true);
@@ -132,16 +139,13 @@ export default function TasksPage() {
       setTasks(Array.isArray(tasksData) ? tasksData : []);
       setUsers(Array.isArray(usersData) ? usersData : []);
       setReports(Array.isArray(dailyData) ? dailyData : []);
-      setProcurementItems(Array.isArray(procurementData) ? procurementData : []);
+      setProcurementItems(
+        Array.isArray(procurementData) ? procurementData : []
+      );
       setProjects(Array.isArray(projectsData) ? projectsData : []);
     } catch (err: any) {
       console.error(err);
       setError(err?.message || "Unable to load tasks page data.");
-      setTasks([]);
-      setUsers([]);
-      setReports([]);
-      setProcurementItems([]);
-      setProjects([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -165,7 +169,7 @@ export default function TasksPage() {
       }
     }
 
-    const firstTaskWithProject = tasks.find((t) => t.projectId);
+    const firstTaskWithProject = tasks.find((t: any) => t.projectId);
     if (firstTaskWithProject?.projectId) {
       setCurrentProjectId(String(firstTaskWithProject.projectId));
       return;
@@ -188,9 +192,7 @@ export default function TasksPage() {
 
     const taskProjectId = tasks.find((t: any) => t.projectId)?.projectId;
     if (taskProjectId) {
-      return projects.find(
-        (p: any) => normalizeId(p) === String(taskProjectId)
-      );
+      return projects.find((p: any) => normalizeId(p) === String(taskProjectId));
     }
 
     return null;
@@ -291,8 +293,15 @@ export default function TasksPage() {
       tasks.find((t: any) => t.projectId)?.projectId ||
       "";
 
-    return tasks.filter(
-      (task) => String(task.projectId || "") === String(selectedProjectId)
+    const safeTasks = Array.isArray(tasks)
+      ? tasks
+      : Array.isArray((tasks as any)?.tasks)
+        ? (tasks as any).tasks
+        : [];
+
+    return safeTasks.filter(
+      (task: Task) =>
+        String(task.projectId || "") === String(selectedProjectId)
     );
   }, [tasks, currentProjectId, activeProject]);
 
@@ -301,7 +310,7 @@ export default function TasksPage() {
 
     const me = String(currentUser._id || currentUser.id || "");
 
-    return projectTasks.filter((task) => {
+    return projectTasks.filter((task: Task) => {
       const assigneeId = normalizeId(task.assigneeId);
       const createdById = normalizeId(task.createdById);
 
@@ -322,12 +331,12 @@ export default function TasksPage() {
   }, [projectTasks, currentUser, viewMode]);
 
   const visibleTaskIds = useMemo(
-    () => new Set(filteredTasks.map((t) => normalizeId(t))),
+    () => new Set(filteredTasks.map((t: Task) => normalizeId(t))),
     [filteredTasks]
   );
 
   const visibleRootTasks = useMemo(() => {
-    return filteredTasks.filter((task) => {
+    return filteredTasks.filter((task: Task) => {
       const parentId = String(task.parentId || "");
       return !parentId || !visibleTaskIds.has(parentId);
     });
@@ -335,7 +344,7 @@ export default function TasksPage() {
 
   const getVisibleDirectSubtasks = (taskId: string) => {
     return filteredTasks.filter(
-      (t) => String(t.parentId || "") === String(taskId || "")
+      (t: Task) => String(t.parentId || "") === String(taskId || "")
     );
   };
 
@@ -348,7 +357,7 @@ export default function TasksPage() {
       return Math.min(Math.max(Number(item.progress || 0), 0), 100);
     }
 
-    const leafNodes = descendants.filter((desc) => {
+    const leafNodes = descendants.filter((desc: Task) => {
       const descId = normalizeId(desc);
       return getDirectChildren(descId, tasks).length === 0;
     });
@@ -357,14 +366,157 @@ export default function TasksPage() {
 
     const total = baseNodes.length;
     const completed = baseNodes.filter(
-      (node) => getComputedStatus(node, tasks) === "Complete"
+      (node: Task) => getComputedStatus(node, tasks) === "Complete"
     ).length;
 
     return total > 0 ? Math.round((completed / total) * 100) : 0;
   };
 
+  const isLeafTask = (item: Task) => {
+    const itemId = normalizeId(item);
+    return getDirectChildren(itemId, tasks).length === 0;
+  };
+
+  const canUpdateOwnProgress = (item: Task) => {
+    if (!currentUser) return false;
+    return (
+      normalizeId(item.assigneeId) === normalizeId(currentUser) && isLeafTask(item)
+    );
+  };
+
+  const getManualStatusFromProgress = (
+    progress: number,
+    currentStatus?: string
+  ): TaskStatus => {
+    if (currentStatus === "On Hold") return "On Hold";
+    if (progress >= 100) return "Complete";
+    if (progress > 0) return "In Progress";
+    return "Not Started";
+  };
+
+  const sendProgressNotification = async (
+    task: Task,
+    progress: number,
+    status: TaskStatus
+  ) => {
+    const creatorId = normalizeId(task.createdById);
+    const actorId = normalizeId(currentUser);
+
+    if (!creatorId || !actorId || creatorId === actorId) return;
+
+    const type =
+      status === "Complete" ? "task_completed" : "task_progress_updated";
+
+    const title =
+      status === "Complete" ? "Task completed" : "Task progress updated";
+
+    const message =
+      status === "Complete"
+        ? `${currentUser?.fullName || "A user"} completed "${task.title || "Untitled task"}".`
+        : `${currentUser?.fullName || "A user"} updated "${task.title || "Untitled task"}" to ${progress}%.`;
+
+    await fetch("/api/notifications", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userId: creatorId,
+        taskId: normalizeId(task),
+        actorUserId: actorId,
+        type,
+        title,
+        message,
+      }),
+    });
+  };
+
+  const handleUpdateTaskProgress = async (task: Task, forcedProgress?: number) => {
+    const taskId = normalizeId(task);
+    if (!taskId) return;
+
+    const nextProgressRaw =
+      forcedProgress !== undefined
+        ? forcedProgress
+        : progressInputs[taskId] ?? Number(task.progress || 0);
+
+    const nextProgress = Math.max(0, Math.min(100, Number(nextProgressRaw || 0)));
+    const nextStatus = getManualStatusFromProgress(nextProgress, String(task.status || ""));
+
+    try {
+      setUpdatingTaskId(taskId);
+      setTaskActionMessage((prev) => ({
+        ...prev,
+        [taskId]: "",
+      }));
+
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          progress: nextProgress,
+          status: nextStatus,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        throw new Error(errorData?.error || "Failed to update task");
+      }
+
+      const updatedTask = await res.json();
+
+      setTasks((prev: Task[]) =>
+        prev.map((existing: Task) =>
+          normalizeId(existing) === taskId
+            ? {
+              ...existing,
+              ...updatedTask,
+              progress: updatedTask?.progress ?? nextProgress,
+              status: updatedTask?.status ?? nextStatus,
+              updatedAt: updatedTask?.updatedAt || new Date().toISOString(),
+            }
+            : existing
+        )
+      );
+
+      setProgressInputs((prev) => ({
+        ...prev,
+        [taskId]: updatedTask?.progress ?? nextProgress,
+      }));
+
+      await sendProgressNotification(
+        {
+          ...task,
+          ...updatedTask,
+          progress: updatedTask?.progress ?? nextProgress,
+          status: updatedTask?.status ?? nextStatus,
+        },
+        updatedTask?.progress ?? nextProgress,
+        (updatedTask?.status ?? nextStatus) as TaskStatus
+      );
+
+      setTaskActionMessage((prev) => ({
+        ...prev,
+        [taskId]:
+          nextProgress >= 100
+            ? "Task marked as complete."
+            : "Progress updated successfully.",
+      }));
+    } catch (err: any) {
+      setTaskActionMessage((prev) => ({
+        ...prev,
+        [taskId]: err?.message || "Unable to update task.",
+      }));
+    } finally {
+      setUpdatingTaskId(null);
+    }
+  };
+
   const activeRootTasks = useMemo(() => {
-    return visibleRootTasks.filter((task) => {
+    return visibleRootTasks.filter((task: Task) => {
       const displayedStatus = getComputedStatus(task, tasks);
       const progress = getTaskProgress(task);
       return displayedStatus !== "Complete" && progress < 100;
@@ -372,7 +524,7 @@ export default function TasksPage() {
   }, [visibleRootTasks, tasks]);
 
   const historyRootTasks = useMemo(() => {
-    return visibleRootTasks.filter((task) => {
+    return visibleRootTasks.filter((task: Task) => {
       const displayedStatus = getComputedStatus(task, tasks);
       const progress = getTaskProgress(task);
       return displayedStatus === "Complete" || progress === 100;
@@ -382,7 +534,7 @@ export default function TasksPage() {
   const high = useMemo(
     () =>
       activeRootTasks
-        .filter((t) => getBranchPriority(t) === "High")
+        .filter((t: Task) => getBranchPriority(t) === "High")
         .sort(sortByDate),
     [activeRootTasks]
   );
@@ -390,7 +542,7 @@ export default function TasksPage() {
   const medium = useMemo(
     () =>
       activeRootTasks
-        .filter((t) => getBranchPriority(t) === "Medium")
+        .filter((t: Task) => getBranchPriority(t) === "Medium")
         .sort(sortByDate),
     [activeRootTasks]
   );
@@ -398,7 +550,7 @@ export default function TasksPage() {
   const low = useMemo(
     () =>
       activeRootTasks
-        .filter((t) => getBranchPriority(t) === "Low")
+        .filter((t: Task) => getBranchPriority(t) === "Low")
         .sort(sortByDate),
     [activeRootTasks]
   );
@@ -416,6 +568,19 @@ export default function TasksPage() {
       setExpandedTasks((prev) => ({ ...prev, ...nextExpanded }));
     }
   }, [visibleRootTasks]);
+
+  useEffect(() => {
+    const nextInputs: Record<string, number> = {};
+    for (const task of filteredTasks) {
+      const id = normalizeId(task);
+      if (!id) continue;
+      if (isLeafTask(task) && nextInputs[id] === undefined) {
+        nextInputs[id] = Math.min(Math.max(Number(task.progress || 0), 0), 100);
+      }
+    }
+
+    setProgressInputs((prev) => ({ ...nextInputs, ...prev }));
+  }, [filteredTasks, tasks]);
 
   const toggleExpanded = (taskId: string) => {
     setExpandedTasks((prev) => ({
@@ -477,7 +642,7 @@ export default function TasksPage() {
     const isExpanded = expandedTasks[itemId] ?? true;
 
     const blocked = procurementItems.some(
-      (p) =>
+      (p: any) =>
         normalizeId(p.relatedTaskId) === itemId &&
         String(p.status || "") !== "Delivered"
     );
@@ -491,9 +656,13 @@ export default function TasksPage() {
     const computedStatus = getComputedStatus(item, tasks || []);
     const rawStatus = item.status || "Not Started";
     const progressValue = getTaskProgress(item);
+    const canEdit = canUpdateOwnProgress(item);
+    const liveInputValue =
+      progressInputs[itemId] ?? Math.min(Math.max(Number(item.progress || 0), 0), 100);
+    const isSaving = updatingTaskId === itemId;
 
     const allDescendants = getDescendants(itemId, tasks);
-    const descendantLeaves = allDescendants.filter((desc) => {
+    const descendantLeaves = allDescendants.filter((desc: any) => {
       const descId = normalizeId(desc);
       return getDirectChildren(descId, tasks).length === 0;
     });
@@ -506,11 +675,10 @@ export default function TasksPage() {
     return (
       <div key={itemId} className="mt-4">
         <div
-          className={`bg-[#111827] border p-5 rounded-2xl shadow-lg transition-all duration-200 ${
-            computedStatus === "Complete"
-              ? "border-gray-700 opacity-70"
-              : "hover:border-blue-500"
-          } ${level === 0 ? "border-gray-800" : "border-cyan-900/40 bg-[#0f172a]"}`}
+          className={`bg-[#111827] border p-5 rounded-2xl shadow-lg transition-all duration-200 ${computedStatus === "Complete"
+            ? "border-gray-700 opacity-70"
+            : "hover:border-blue-500"
+            } ${level === 0 ? "border-gray-800" : "border-cyan-900/40 bg-[#0f172a]"}`}
           style={{ marginLeft: `${level * 26}px` }}
         >
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
@@ -535,6 +703,7 @@ export default function TasksPage() {
                   onClick={() => router.push(`/tasks/${itemId}`)}
                   className="text-left text-lg font-semibold hover:text-blue-400"
                 >
+                  {computedStatus === "Complete" ? "✅ " : ""}
                   {item.title || "Untitled task"}
                 </button>
 
@@ -551,6 +720,12 @@ export default function TasksPage() {
                 {hasChildren && (
                   <span className="text-xs px-3 py-1 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30">
                     {children.length} direct subtask{children.length > 1 ? "s" : ""}
+                  </span>
+                )}
+
+                {computedStatus === "Complete" && (
+                  <span className="text-xs px-3 py-1 rounded-full bg-green-500/20 text-green-300 border border-green-500/30">
+                    Checked
                   </span>
                 )}
               </div>
@@ -612,6 +787,77 @@ export default function TasksPage() {
                   This task has {children.length} visible subtask
                   {children.length > 1 ? "s" : ""}. They are shown below in the hierarchy.
                 </p>
+              )}
+
+              {canEdit && (
+                <div className="mt-5 rounded-xl border border-blue-500/20 bg-[#0b1220] p-4">
+                  <div className="text-sm font-medium text-blue-300 mb-3">
+                    Update your progress
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={liveInputValue}
+                      onChange={(e) =>
+                        setProgressInputs((prev) => ({
+                          ...prev,
+                          [itemId]: Number(e.target.value),
+                        }))
+                      }
+                      className="w-full"
+                      disabled={isSaving}
+                    />
+
+                    <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={liveInputValue}
+                        onChange={(e) =>
+                          setProgressInputs((prev) => ({
+                            ...prev,
+                            [itemId]: Math.max(
+                              0,
+                              Math.min(100, Number(e.target.value || 0))
+                            ),
+                          }))
+                        }
+                        disabled={isSaving}
+                        className="w-28 rounded-lg bg-[#111827] border border-gray-700 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                      />
+
+                      <span className="text-sm text-gray-400">%</span>
+
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateTaskProgress(item)}
+                        disabled={isSaving}
+                        className="rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-4 py-2 text-sm font-medium"
+                      >
+                        {isSaving ? "Saving..." : "Save Progress"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateTaskProgress(item, 100)}
+                        disabled={isSaving || progressValue === 100}
+                        className="rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 px-4 py-2 text-sm font-medium"
+                      >
+                        Mark Complete
+                      </button>
+                    </div>
+
+                    {taskActionMessage[itemId] && (
+                      <div className="text-sm text-cyan-300">
+                        {taskActionMessage[itemId]}
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
 
@@ -694,29 +940,26 @@ export default function TasksPage() {
         <div className="flex flex-wrap gap-3">
           <button
             onClick={() => setViewMode("all")}
-            className={`px-4 py-2 rounded-lg ${
-              viewMode === "all" ? "bg-gray-500" : "bg-gray-700 hover:bg-gray-600"
-            }`}
+            className={`px-4 py-2 rounded-lg ${viewMode === "all" ? "bg-gray-500" : "bg-gray-700 hover:bg-gray-600"
+              }`}
           >
             All
           </button>
 
           <button
             onClick={() => setViewMode("my")}
-            className={`px-4 py-2 rounded-lg ${
-              viewMode === "my" ? "bg-blue-600" : "bg-blue-700 hover:bg-blue-600"
-            }`}
+            className={`px-4 py-2 rounded-lg ${viewMode === "my" ? "bg-blue-600" : "bg-blue-700 hover:bg-blue-600"
+              }`}
           >
             My Tasks
           </button>
 
           <button
             onClick={() => setViewMode("assigned")}
-            className={`px-4 py-2 rounded-lg ${
-              viewMode === "assigned"
-                ? "bg-purple-600"
-                : "bg-purple-700 hover:bg-purple-600"
-            }`}
+            className={`px-4 py-2 rounded-lg ${viewMode === "assigned"
+              ? "bg-purple-600"
+              : "bg-purple-700 hover:bg-purple-600"
+              }`}
           >
             Assigned by Me
           </button>
@@ -786,7 +1029,7 @@ export default function TasksPage() {
               <h2 className="text-xl font-bold text-gray-500 mb-6">History</h2>
 
               <div className="space-y-4">
-                {historyRootTasks.map((task, index) => {
+                {historyRootTasks.map((task: Task, index: number) => {
                   const taskId = normalizeId(task);
                   const computedTaskStatus = getComputedStatus(task, tasks);
                   const progress = getTaskProgress(task);

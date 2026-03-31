@@ -1,40 +1,37 @@
 "use client";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 import { DailyReport } from "@/types/dailyReport";
 
 type DailyReportStore = {
   reports: DailyReport[];
 
-  addReport: (report: DailyReport) => void;
+  addReport: (report: DailyReport) => Promise<void>;
   getReportsByTask: (taskId: string) => DailyReport[];
 
-  // 🔥 AJOUT POUR SYNC BACKEND
   setReports: (reports: DailyReport[]) => void;
 };
 
-export const useDailyReportStore = create<DailyReportStore>()(
-  persist(
-    (set, get) => ({
-      reports: [],
+export const useDailyReportStore = create<DailyReportStore>()((set, get) => ({
+  reports: [],
 
-      // 🔥 NOUVEAU
-      setReports: (reports) =>
-        set({
-          reports,
-        }),
+  setReports: (reports) => set({ reports }),
 
-      addReport: (report) =>
-        set((state) => ({
-          reports: [...state.reports, report],
-        })),
-
-      getReportsByTask: (taskId) =>
-        get().reports.filter((r) => r.taskId === taskId),
-    }),
-    {
-      name: "sitepulse-daily-reports",
+  addReport: async (report) => {
+    try {
+      const res = await fetch("/api/daily", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(report),
+      });
+      if (res.ok) {
+        const newReport = await res.json();
+        set((state) => ({ reports: [...state.reports, newReport] }));
+      }
+    } catch (error) {
+      console.error("Failed to add report:", error);
     }
-  )
-);
+  },
+
+  getReportsByTask: (taskId) => get().reports.filter((r) => r.taskId === taskId),
+}));

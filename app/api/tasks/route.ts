@@ -3,11 +3,18 @@ import { connectDB } from "@/lib/mongodb";
 import Task from "@/models/task";
 
 export async function GET() {
-  await connectDB();
+  try {
+    await connectDB();
 
-  const tasks = await Task.find();
+    const tasks = await Task.find().sort({ createdAt: -1 });
 
-  return NextResponse.json(tasks);
+    return NextResponse.json(tasks);
+  } catch (error: any) {
+    return NextResponse.json(
+      { message: error.message || "Failed to fetch tasks" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: Request) {
@@ -16,12 +23,18 @@ export async function POST(req: Request) {
 
     const body = await req.json();
 
-    const newTask = await Task.create(body);
+    const newTask = await Task.create({
+      ...body,
+      progress: body.progress ?? 0,
+      status: body.status ?? "Not Started",
+      createdAt: body.createdAt ?? new Date(),
+      updatedAt: new Date(),
+    });
 
-    return NextResponse.json(newTask);
+    return NextResponse.json(newTask, { status: 201 });
   } catch (error: any) {
     return NextResponse.json(
-      { message: error.message },
+      { message: error.message || "Failed to create task" },
       { status: 500 }
     );
   }

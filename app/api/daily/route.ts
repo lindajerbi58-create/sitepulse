@@ -6,9 +6,7 @@ export async function GET() {
   try {
     await connectDB();
 
-    const dailies = await Daily.find()
-      .populate("user")
-      .sort({ createdAt: -1 });
+    const dailies = await Daily.find().sort({ createdAt: -1 });
 
     return NextResponse.json(dailies);
 
@@ -24,23 +22,16 @@ export async function POST(req: Request) {
   try {
     await connectDB();
 
-    const { userId, date, workDone, issues, plansTomorrow } =
-      await req.json();
+    const body = await req.json();
 
-    if (!userId || !workDone) {
+    if (!body?.userId || !body?.taskId || body?.targetQuantity == null || body?.actualQuantity == null) {
       return NextResponse.json(
         { message: "Missing required fields" },
         { status: 400 }
       );
     }
 
-    const newDaily = await Daily.create({
-      user: userId,
-      date,
-      workDone,
-      issues,
-      plansTomorrow,
-    });
+    const newDaily = await Daily.create(body);
 
     return NextResponse.json(newDaily);
 

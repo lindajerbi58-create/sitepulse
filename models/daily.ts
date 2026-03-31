@@ -2,27 +2,17 @@ import mongoose from "mongoose";
 
 const DailySchema = new mongoose.Schema(
   {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    date: {
-      type: String,
-      required: true,
-    },
-    workDone: {
-      type: String,
-      required: true,
-    },
-    issues: {
-      type: String,
-    },
-    plansTomorrow: {
-      type: String,
-    },
+    taskId: { type: String, required: true },
+    userId: { type: String, required: true },
+    projectId: { type: String, required: true },
+    date: { type: String, required: true },
+    qualityLevel: { type: String, enum: ["Very Good", "Medium", "Low"], default: "Medium" },
+    targetQuantity: { type: Number, required: true },
+    actualQuantity: { type: Number, required: true },
+    comment: String,
+    delayReasons: [String],
+    createdAt: { type: String, required: true },
   },
-  { timestamps: true }
 );
 
 export default mongoose.models.Daily ||

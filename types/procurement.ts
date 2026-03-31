@@ -9,7 +9,8 @@ export type ProcurementPriority =
   | "Medium"
   | "Low";
 export interface ProcurementItem {
-  id: string;
+  _id?: string;
+  id?: string;
   title: string;
   supplier: string;
   quantity: number;

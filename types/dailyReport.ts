@@ -10,7 +10,8 @@ export type DelayReason =
 export type QualityLevel = "Very Good" | "Medium" | "Low";
 
 export interface DailyReport {
-  id: string;
+  _id?: string;
+  id?: string;
   taskId: string;
   userId: string;
 projectId: string;

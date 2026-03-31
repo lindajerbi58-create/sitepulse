@@ -69,21 +69,8 @@ export default function NewTaskPage() {
       progress: 0,
     };
 
-    // 🔥 1️⃣ Save local (Zustand)
-    addTask(newTask);
-
-    // 🔥 2️⃣ Save backend
-    try {
-      await fetch("/api/tasks", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(newTask),
-      });
-    } catch (error) {
-      console.error("Backend task creation failed", error);
-    }
+    // 🔥 Save task using unified store action
+    await addTask(newTask);
 
     router.push("/tasks");
   };

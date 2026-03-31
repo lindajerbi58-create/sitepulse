@@ -2,49 +2,84 @@
 
 import { useUserStore } from "@/store/useUserStore";
 import { useTaskStore } from "@/store/useTaskStore";
+import { useProjectStore } from "@/store/useProjectStore";
 import { useIssueStore } from "@/store/useIssueStore";
 import { useDailyReportStore } from "@/store/useDailyReportStore";
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function UsersPage() {
-  const { users, setUsers } = useUserStore();
-  const { tasks, setTasks } = useTaskStore();
-  const { issues, setIssues } = useIssueStore();
-  const { reports, setReports } = useDailyReportStore();
+  const { currentUser, users, setUsers } = useUserStore() as any;
+  const { setProjects, projects } = useProjectStore() as any;
+  const { tasks, setTasks } = useTaskStore() as any;
+  const { issues, setIssues } = useIssueStore() as any;
+  const { reports, setReports } = useDailyReportStore() as any;
 
-  // 🔥 FETCH BACKEND DATA
+  const [mounted, setMounted] = useState(false);
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // New user form state
+  const [fullName, setFullName] = useState("");
+  const [role, setRole] = useState("");
+  const [department, setDepartment] = useState("");
+  const [reportsTo, setReportsTo] = useState("");
+  const [formError, setFormError] = useState("");
+
   useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        const [usersRes, tasksRes, issuesRes, reportsRes] =
-          await Promise.all([
-            fetch("/api/users"),
-            fetch("/api/tasks"),
-            fetch("/api/issues"),
-            fetch("/api/daily"),
-          ]);
-
-        const usersData = await usersRes.json();
-        const tasksData = await tasksRes.json();
-        const issuesData = await issuesRes.json();
-        const reportsData = await reportsRes.json();
-
-        setUsers(usersData);
-        setTasks(tasksData);
-        setIssues(issuesData);
-        setReports(reportsData);
-      } catch (error) {
-        console.error("Failed to fetch data", error);
-      }
-    };
-
-    fetchAll();
+    setMounted(true);
+    loadAllData();
   }, []);
+
+  const loadAllData = async (isRefresh = false) => {
+    try {
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
+      setError("");
+
+      const [usersRes, tasksRes, projectsRes, issuesRes, reportsRes] = await Promise.all([
+        fetch("/api/users", { cache: "no-store" }),
+        fetch("/api/tasks", { cache: "no-store" }),
+        fetch("/api/projects", { cache: "no-store" }),
+        fetch("/api/issues", { cache: "no-store" }),
+        fetch("/api/daily", { cache: "no-store" }),
+      ]);
+
+      if (!usersRes.ok || !tasksRes.ok || !projectsRes.ok) {
+        throw new Error("Failed to load necessary data");
+      }
+
+      const [usersData, tasksData, projectsData, issuesData, reportsData] = await Promise.all([
+        usersRes.json(),
+        tasksRes.json(),
+        projectsRes.json(),
+        issuesRes.json(),
+        reportsRes.json(),
+      ]);
+
+      setUsers(Array.isArray(usersData) ? usersData : []);
+      setTasks(Array.isArray(tasksData) ? tasksData : []);
+      setProjects(Array.isArray(projectsData) ? projectsData : []);
+      setIssues(Array.isArray(issuesData) ? issuesData : []);
+      setReports(Array.isArray(reportsData) ? reportsData : []);
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message || "Error loading page data.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  if (!mounted) return null;
 
   return (
     <div className="min-h-screen bg-[#0b1220] text-white p-8">
-
       <div className="flex justify-between items-center mb-10">
         <h1 className="text-3xl font-bold">Team Control Center</h1>
 
@@ -58,18 +93,18 @@ export default function UsersPage() {
 
       <div className="grid md:grid-cols-2 gap-6">
 
-        {users.map((user) => {
+        {users.map((user: any) => {
 
           const userTasks = tasks.filter(
-            (t) => t.assigneeId === user._id
+            (t: any) => t.assigneeId === user._id
           );
 
           const openIssues = issues.filter(
-            (i) => i.ownerId === user._id && i.status === "Open"
+            (i: any) => i.ownerId === user._id && i.status === "Open"
           );
 
           const userReports = reports.filter(
-            (r) =>
+            (r: any) =>
               r.userId === user._id &&
               r.targetQuantity > 0
           );
@@ -77,7 +112,7 @@ export default function UsersPage() {
           const avgPerformance =
             userReports.length > 0
               ? (
-                  userReports.reduce((sum, r) => {
+                  userReports.reduce((sum: number, r: any) => {
                     return (
                       sum +
                       ((r.actualQuantity /

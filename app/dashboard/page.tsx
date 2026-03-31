@@ -34,22 +34,18 @@ type Task = {
 };
 
 export default function DashboardPage() {
-  const { currentUser, users } = useUserStore();
+  const { currentUser, users, setUsers } = useUserStore() as any;
   const currentUserId = currentUser?._id;
-  const logout = useUserStore((state) => state.logout);
-  const setUsers = useUserStore((state) => state.setUsers);
+  const logout = useUserStore((state: any) => state.logout);
 
-  // gardé pour ne rien casser, même si non utilisé dans le dashboard
-  const { tasks: storeTasks } = useTaskStore();
-  const [dbTasks, setDbTasks] = useState<Task[]>([]);
+  const { tasks: dbTasks, setTasks } = useTaskStore() as any;
+  const { issues, setIssues } = useIssueStore() as any;
+  const { reports: backendReports, setReports: setBackendReports } = useDailyReportStore() as any;
+
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState("");
 
-  const { issues } = useIssueStore();
-  const { reports } = useDailyReportStore();
-
   const [showTeam, setShowTeam] = useState(false);
-  const [backendReports, setBackendReports] = useState<any[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const router = useRouter();
@@ -122,78 +118,40 @@ export default function DashboardPage() {
     }
   };
 
-  const loadUsers = async () => {
-    try {
-      const res = await fetch("/api/users");
-      const data = await res.json();
-      setUsers(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Failed to fetch users", err);
-    }
-  };
-
-  const fetchDaily = async () => {
-    try {
-      const res = await fetch("/api/daily");
-      const data = await res.json();
-      setBackendReports(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Failed to fetch daily", err);
-      setBackendReports([]);
-    }
-  };
-
-  const fetchTasks = async () => {
-    try {
-      setTasksLoading(true);
-      setTasksError("");
-      const res = await fetch("/api/tasks");
-      const data = await res.json();
-      setDbTasks(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Failed to fetch tasks", err);
-      setDbTasks([]);
-      setTasksError("Unable to load tasks from database.");
-    } finally {
-      setTasksLoading(false);
-    }
-  };
-
   const refreshDashboard = async () => {
     try {
       setTasksLoading(true);
       setTasksError("");
 
-      const [tasksRes, usersRes, dailyRes] = await Promise.all([
-        fetch("/api/tasks"),
-        fetch("/api/users"),
-        fetch("/api/daily"),
+      const [tasksRes, usersRes, dailyRes, issuesRes] = await Promise.all([
+        fetch("/api/tasks", { cache: "no-store" }),
+        fetch("/api/users", { cache: "no-store" }),
+        fetch("/api/daily", { cache: "no-store" }),
+        fetch("/api/issues", { cache: "no-store" }),
       ]);
 
-      const [tasksData, usersData, dailyData] = await Promise.all([
+      const [tasksData, usersData, dailyData, issuesData] = await Promise.all([
         tasksRes.json(),
         usersRes.json(),
         dailyRes.json(),
+        issuesRes.json(),
       ]);
 
-      setDbTasks(Array.isArray(tasksData) ? tasksData : []);
+      setTasks(Array.isArray(tasksData) ? tasksData : []);
       setUsers(Array.isArray(usersData) ? usersData : []);
       setBackendReports(Array.isArray(dailyData) ? dailyData : []);
+      setIssues(Array.isArray(issuesData) ? issuesData : []);
       setLastUpdated(new Date());
     } catch (err) {
       console.error("Failed to refresh dashboard", err);
-      setTasksError("Unable to refresh dashboard data.");
+      setTasksError("Unable to load dashboard data.");
     } finally {
       setTasksLoading(false);
     }
   };
 
   useEffect(() => {
-    loadUsers();
-    fetchDaily();
-    fetchTasks().then(() => {
-      setLastUpdated(new Date());
-    });
+    refreshDashboard();
   }, []);
 
   useEffect(() => {
@@ -224,9 +182,9 @@ export default function DashboardPage() {
   }, [currentUserId, teamMemberIds]);
 
   const allReports = useMemo(() => {
+    const defaultReports = backendReports || [];
     return [
-      ...reports,
-      ...backendReports.map((r) => ({
+      ...defaultReports.map((r: any) => ({
         ...r,
         targetQuantity: Number(r.targetQuantity || 0),
         actualQuantity: Number(r.actualQuantity || 0),
@@ -234,7 +192,7 @@ export default function DashboardPage() {
         userId: normalizeId(r.userId || r.createdById || r.authorId),
       })),
     ];
-  }, [reports, backendReports]);
+  }, [backendReports]);
 
   const scopedTasks = useMemo(() => {
     return dbTasks.filter((t: any) => {
@@ -422,7 +380,7 @@ export default function DashboardPage() {
   const criticalPenalty = criticalTasks.length * 6;
   const missingReportsPenalty = missingReportsToday * 8;
   const workloadPenalty =
-    workloadData.filter((w) => w.totalTasks >= 6 || w.delayedTasks >= 3).length * 5;
+    workloadData.filter((w: any) => w.totalTasks >= 6 || w.delayedTasks >= 3).length * 5;
 
   const riskScoreRaw =
     delayedPenalty +
@@ -438,10 +396,10 @@ export default function DashboardPage() {
     riskScore >= 80
       ? "Critical"
       : riskScore >= 55
-      ? "High"
-      : riskScore >= 30
-      ? "Moderate"
-      : "Low";
+        ? "High"
+        : riskScore >= 30
+          ? "Moderate"
+          : "Low";
 
   const priorities = useMemo(() => {
     const items: string[] = [];
@@ -471,7 +429,7 @@ export default function DashboardPage() {
     }
 
     const overloaded = workloadData.filter(
-      (w) => w.totalTasks >= 6 || w.delayedTasks >= 3
+      (w: any) => w.totalTasks >= 6 || w.delayedTasks >= 3
     );
 
     if (overloaded.length > 0) {
@@ -506,7 +464,7 @@ export default function DashboardPage() {
     if (openIssues > 0) actions.push("resolve blockers");
     if (missingReportsToday > 0) actions.push("follow up on reporting compliance");
 
-    if (workloadData.some((w) => w.totalTasks >= 6 || w.delayedTasks >= 3)) {
+    if (workloadData.some((w: any) => w.totalTasks >= 6 || w.delayedTasks >= 3)) {
       actions.push("rebalance team workload");
     }
 
@@ -830,10 +788,10 @@ export default function DashboardPage() {
                   riskScore >= 80
                     ? "#ef4444"
                     : riskScore >= 55
-                    ? "#f97316"
-                    : riskScore >= 30
-                    ? "#eab308"
-                    : "#22c55e",
+                      ? "#f97316"
+                      : riskScore >= 30
+                        ? "#eab308"
+                        : "#22c55e",
               },
             ]}
           >
@@ -916,11 +874,10 @@ export default function DashboardPage() {
                     </div>
 
                     <span
-                      className={`text-xs px-3 py-1 rounded-full ${
-                        member.totalTasks >= 6 || member.delayedTasks >= 3
+                      className={`text-xs px-3 py-1 rounded-full ${member.totalTasks >= 6 || member.delayedTasks >= 3
                           ? "bg-red-500/20 text-red-300"
                           : "bg-green-500/20 text-green-300"
-                      }`}
+                        }`}
                     >
                       {member.totalTasks >= 6 || member.delayedTasks >= 3
                         ? "Heavy Load"

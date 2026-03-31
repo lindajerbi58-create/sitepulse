@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import GlobalNotificationBell from "@/components/GlobalNotificationBell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,7 +26,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-[#0b1220] text-white">
-
+        <GlobalNotificationBell />
         {children}
       </body>
     </html>

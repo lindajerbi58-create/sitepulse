@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Issue from "@/models/issue";
 
-export async function PATCH(
+export async function PUT(
   req: Request,
   { params }: { params: { id: string } }
 ) {

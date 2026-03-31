@@ -15,7 +15,8 @@ export type IssueCategory =
   | "Other";
 
 export interface Issue {
-  id: string;
+  _id?: string;
+  id?: string;
   taskId: string;
   reportId?: string;
 

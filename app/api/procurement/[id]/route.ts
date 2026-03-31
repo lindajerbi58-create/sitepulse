@@ -23,7 +23,7 @@ export async function GET(
   }
 }
 
-export async function PATCH(
+export async function PUT(
   req: Request,
   { params }: { params: { id: string } }
 ) {
@@ -33,7 +33,7 @@ export async function PATCH(
     const patch = await req.json();
 
     const updated = await Procurement.findOneAndUpdate(
-      { id: params.id },
+      { $or: [{ id: params.id }, { _id: params.id.length === 24 ? params.id : null }] },
       { $set: patch },
       { new: true }
     );

@@ -1,40 +1,52 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 interface Project {
-  id: string;
+  _id?: string;
+  id?: string;
   name: string;
-  createdAt: string;
-  status: "Active" | "Completed";
+  createdAt?: string;
+  status?: "Active" | "Completed";
 }
 
 interface ProjectState {
   projects: Project[];
   currentProjectId: string | null;
-  addProject: (project: Project) => void;
+
+  setProjects: (projects: Project[]) => void;
+  addProject: (project: Project) => Promise<void>;
   setCurrentProjectId: (id: string) => void;
   clearProject: () => void;
 }
 
-export const useProjectStore = create<ProjectState>()(
-  persist(
-    (set) => ({
-      projects: [],
-      currentProjectId: null,
+export const useProjectStore = create<ProjectState>()((set) => ({
+  projects: [],
+  currentProjectId: null,
 
-      addProject: (project) =>
-        set((state) => ({
-          projects: [...state.projects, project],
-        })),
+  setProjects: (projects) => set({ projects }),
 
-      setCurrentProjectId: (id) =>
-        set({ currentProjectId: id }),
-
-      clearProject: () =>
-        set({ currentProjectId: null }),
-    }),
-    {
-      name: "project-storage",
+  addProject: async (project) => {
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(project),
+      });
+      if (res.ok) {
+        const newProject = await res.json();
+        set((state) => ({ projects: [...state.projects, newProject] }));
+      }
+    } catch (error) {
+      console.error("Failed to add project:", error);
     }
-  )
-);
+  },
+
+  setCurrentProjectId: (id) => {
+    localStorage.setItem("sitepulse-current-project", id);
+    set({ currentProjectId: id });
+  },
+
+  clearProject: () => {
+    localStorage.removeItem("sitepulse-current-project");
+    set({ currentProjectId: null });
+  },
+}));

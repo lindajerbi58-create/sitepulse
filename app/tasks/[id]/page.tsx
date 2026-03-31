@@ -5,6 +5,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useUserStore } from "@/store/useUserStore";
 import { predictDelay } from "@/lib/delayPredictor";
+import { useProjectStore } from "@/store/useProjectStore";
+import { useTaskStore } from "@/store/useTaskStore";
+import { useDailyReportStore } from "@/store/useDailyReportStore";
+import { useProcurementStore } from "@/store/useProcurementStore";
 
 type TaskStatus = "Not Started" | "In Progress" | "On Hold" | "Complete";
 
@@ -71,24 +75,20 @@ type HistoryItem = {
 export default function TaskDetailsPage() {
   const router = useRouter();
   const params = useParams();
-  const currentUser = useUserStore((state: any) => state.currentUser);
+  const { currentUser, setUsers, users } = useUserStore() as any;
+  const { currentProjectId, setProjects, projects } = useProjectStore() as any;
+  const { tasks, setTasks } = useTaskStore() as any;
+  const { reports, setReports } = useDailyReportStore() as any;
+  const { items: procurementItems, setItems: setProcurementItems } = useProcurementStore() as any;
 
   const routeTaskId = String((params as any)?.id || "");
 
   const [mounted, setMounted] = useState(false);
 
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [reports, setReports] = useState<Report[]>([]);
-  const [procurementItems, setProcurementItems] = useState<ProcurementItem[]>(
-    []
-  );
-  const [projects, setProjects] = useState<Project[]>([]);
-
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pageError, setPageError] = useState("");
-
+  const [progressMessage, setProgressMessage] = useState("");
   const [subtaskTitle, setSubtaskTitle] = useState("");
   const [subtaskDescription, setSubtaskDescription] = useState("");
   const [subtaskAssigneeId, setSubtaskAssigneeId] = useState("");
@@ -103,6 +103,11 @@ export default function TaskDetailsPage() {
   const [subtaskSuccess, setSubtaskSuccess] = useState("");
   const [subtaskSaving, setSubtaskSaving] = useState(false);
 
+  // New states for leaf task progress update
+  const [progressInput, setProgressInput] = useState<number>(0);
+  const [workNote, setWorkNote] = useState("");
+  const [taskComment, setTaskComment] = useState("");
+  const [savingProgress, setSavingProgress] = useState(false);
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -151,7 +156,14 @@ export default function TaskDetailsPage() {
           projectsRes.json(),
         ]);
 
-      setTasks(Array.isArray(tasksData) ? tasksData : []);
+      setTasks(
+        Array.isArray(tasksData)
+          ? tasksData
+          : Array.isArray(tasksData?.tasks)
+            ? tasksData.tasks
+            : []
+
+      );
       setUsers(Array.isArray(usersData) ? usersData : []);
       setReports(Array.isArray(dailyData) ? dailyData : []);
       setProcurementItems(Array.isArray(procurementData) ? procurementData : []);
@@ -159,14 +171,116 @@ export default function TaskDetailsPage() {
     } catch (error: any) {
       console.error("TaskDetails loadAllData error:", error);
       setPageError(error?.message || "Unable to load task details.");
-      setTasks([]);
-      setUsers([]);
-      setReports([]);
-      setProcurementItems([]);
-      setProjects([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const handleProgressUpdate = async (isComplete = false) => {
+    if (!task || !currentUser) return;
+
+    setSavingProgress(true);
+    setProgressMessage("");
+
+    const newProgress = isComplete ? 100 : progressInput;
+
+    try {
+      const taskId = String(task._id || task.id);
+
+      const taskRes = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          progress: newProgress,
+          status: isComplete
+            ? "Complete"
+            : newProgress > 0
+              ? "In Progress"
+              : "Not Started",
+        }),
+      });
+
+      if (!taskRes.ok) {
+        const errText = await taskRes.text();
+        throw new Error(errText || "Failed to update task");
+      }
+
+      const updatedTask = await taskRes.json();
+
+      const safeTasks = Array.isArray(tasks)
+        ? tasks
+        : Array.isArray((tasks as any)?.tasks)
+          ? (tasks as any).tasks
+          : [];
+
+      const mergedTask = {
+        ...task,
+        ...updatedTask,
+        progress: updatedTask?.progress ?? newProgress,
+        status:
+          updatedTask?.status ??
+          (isComplete
+            ? "Complete"
+            : newProgress > 0
+              ? "In Progress"
+              : "Not Started"),
+        updatedAt: updatedTask?.updatedAt || new Date().toISOString(),
+      };
+
+      const newTasks = safeTasks.map((t: any) =>
+        String(t._id || t.id) === taskId ? mergedTask : t
+      );
+
+      setTasks(newTasks);
+      setProgressInput(Number(mergedTask.progress || 0));
+
+      const creatorId = normalizeId(task.createdById);
+      const myId = normalizeId(currentUser._id || currentUser.id);
+
+      if (creatorId && creatorId !== myId) {
+        await fetch("/api/notifications", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: creatorId,
+            taskId,
+            actorUserId: myId,
+            type: isComplete ? "task_completed" : "task_progress_updated",
+            title: isComplete ? "Task Completed" : "Task Progress Updated",
+            message: `${currentUser.fullName} updated progress to ${newProgress}% on "${task.title}".`,
+          }),
+        });
+      }
+
+      const today = new Date().toISOString().split("T")[0];
+      await fetch("/api/daily/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "ADD_ENTRY",
+          userId: myId,
+          reportDate: today,
+          userFullName: currentUser.fullName,
+          userRole: currentUser.role,
+          entry: {
+            taskId,
+            taskTitle: task.title,
+            progress: newProgress,
+            workDescription: workNote || "Updated progress",
+            comment: taskComment || "",
+          },
+        }),
+      });
+
+      setWorkNote("");
+      setTaskComment("");
+      setProgressMessage("Progress saved successfully.");
+    } catch (err: any) {
+      console.error(err);
+      setProgressMessage(err?.message || "Error updating task.");
+    } finally {
+      setSavingProgress(false);
     }
   };
 
@@ -176,9 +290,21 @@ export default function TaskDetailsPage() {
   }, [mounted]);
 
   const task = useMemo(() => {
-    return (tasks || []).find(
+    const safeTasks = Array.isArray(tasks)
+      ? tasks
+      : Array.isArray((tasks as any)?.tasks)
+        ? (tasks as any).tasks
+        : [];
+
+    const t = safeTasks.find(
       (t: any) => String(t.id || t._id) === String(routeTaskId)
     );
+
+    if (t && progressInput === 0 && Number(t.progress) > 0) {
+      setProgressInput(Number(t.progress));
+    }
+
+    return t;
   }, [tasks, routeTaskId]);
 
   const getComputedStatus = (
@@ -240,20 +366,20 @@ export default function TaskDetailsPage() {
 
   const blocked = task
     ? procurementItems.some(
-        (p: any) =>
-          normalizeId(p.relatedTaskId) === String(task.id || task._id) &&
-          String(p.status || "") !== "Delivered"
-      )
+      (p: any) =>
+        normalizeId(p.relatedTaskId) === String(task.id || task._id) &&
+        String(p.status || "") !== "Delivered"
+    )
     : false;
 
   const delayRisk = task ? predictDelay(task, reports) : "N/A";
 
   const subtasks = task
     ? tasks.filter(
-        (t: any) =>
-          String(t.parentId || "") === String(task.id || task._id) &&
-          String(t.projectId || "") === String(task.projectId || "")
-      )
+      (t: any) =>
+        String(t.parentId || "") === String(task.id || task._id) &&
+        String(t.projectId || "") === String(task.projectId || "")
+    )
     : [];
 
   const completedSubtasks = subtasks.filter(
@@ -309,7 +435,7 @@ export default function TaskDetailsPage() {
     (normalizeId(task.createdById) ===
       String(currentUser._id || currentUser.id || "") ||
       normalizeId(task.assigneeId) ===
-        String(currentUser._id || currentUser.id || ""))
+      String(currentUser._id || currentUser.id || ""))
   );
 
   const historyItems = useMemo(() => {
@@ -502,11 +628,18 @@ export default function TaskDetailsPage() {
 
   const projectTasks = useMemo(() => {
     if (!task) return [];
-    return (tasks || []).filter(
-      (t: any) => String(t.projectId || "") === String(task.projectId || "")
+
+    const safeTasks = Array.isArray(tasks)
+      ? tasks
+      : Array.isArray((tasks as any)?.tasks)
+        ? (tasks as any).tasks
+        : [];
+
+    return safeTasks.filter(
+      (t: any) =>
+        String(t.projectId || "") === String(task.projectId || "")
     );
   }, [tasks, task]);
-
   const directChildrenMap = useMemo(() => {
     const map = new Map<string, Task[]>();
 
@@ -582,11 +715,10 @@ export default function TaskDetailsPage() {
     return (
       <div key={nodeId} className="mt-3">
         <div
-          className={`rounded-xl border p-4 ${
-            isCurrentTask
-              ? "border-cyan-500 bg-cyan-500/10"
-              : "border-gray-800 bg-[#0b1220]"
-          }`}
+          className={`rounded-xl border p-4 ${isCurrentTask
+            ? "border-cyan-500 bg-cyan-500/10"
+            : "border-gray-800 bg-[#0b1220]"
+            }`}
           style={{ marginLeft: `${level * 24}px` }}
         >
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
@@ -909,6 +1041,69 @@ export default function TaskDetailsPage() {
           </div>
         </div>
       </div>
+
+      {subtasks.length === 0 && String(currentUser?._id || currentUser?.id) === normalizeId(task?.assigneeId) && (
+        <div className="mt-6 bg-[#111827] border border-gray-800 rounded-2xl p-6 shadow-xl">
+          <h2 className="text-xl font-bold mb-4">Update Progress</h2>
+
+          {computedTaskStatus === "Complete" || Number(task?.progress) >= 100 ? (
+            <div className="flex items-center gap-3 text-green-400 bg-green-500/10 p-5 rounded-xl border border-green-500/30">
+              <span className="text-3xl">✓</span>
+              <span className="font-semibold text-lg">This task is completed (100%).</span>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-2">Progress: <span className="text-blue-400">{progressInput}%</span></label>
+                <input
+                  type="range"
+                  min="0" max="100"
+                  value={progressInput}
+                  onChange={(e) => setProgressInput(Number(e.target.value))}
+                  className="w-full accent-blue-600 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-2">What did you do? (Work Description)</label>
+                <input
+                  type="text"
+                  value={workNote}
+                  onChange={(e) => setWorkNote(e.target.value)}
+                  className="w-full bg-[#1f2937] border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  placeholder="e.g. Assembled valve part A..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-2">Optional Comment</label>
+                <textarea
+                  value={taskComment}
+                  onChange={(e) => setTaskComment(e.target.value)}
+                  rows={2}
+                  className="w-full bg-[#1f2937] border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  placeholder="Any issues or extra notes?"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-4 pt-2">
+                <button
+                  onClick={() => handleProgressUpdate(false)}
+                  disabled={savingProgress}
+                  className="bg-blue-600 hover:bg-blue-500 px-8 py-3 rounded-xl font-bold disabled:opacity-50 transition w-full md:w-auto"
+                >
+                  {savingProgress ? "Saving..." : "Save Progress"}
+                </button>
+                <button
+                  onClick={() => handleProgressUpdate(true)}
+                  disabled={savingProgress}
+                  className="bg-green-600 hover:bg-green-500 px-8 py-3 rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2 transition w-full md:w-auto"
+                >
+                  ✓ Mark Complete
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mt-6 bg-[#111827] border border-gray-800 rounded-2xl p-6">
         <h2 className="text-lg font-semibold mb-4">Task Hierarchy</h2>

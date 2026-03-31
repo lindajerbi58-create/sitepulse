@@ -201,6 +201,26 @@ export default function EditTaskPage() {
     if (typeof updateTask === "function") {
       updateTask(String(taskKey), updatedPayload);
 
+      // ✅ SEND NOTIFICATION for main task update
+      try {
+        if (task.createdById && String(task.createdById) !== String(currentUser._id)) {
+          fetch("/api/notifications", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: String(task.createdById),
+              taskId: taskKey,
+              senderId: String(currentUser._id),
+              type: "task_progress_updated",
+              title: "Task Process Updated",
+              message: `${currentUser.fullName || "A team member"} changed the status of your task "${task.title}" to ${status}.`,
+            }),
+          });
+        }
+      } catch (e) {
+        console.error("Failed to send notification", e);
+      }
+
       // ✅ if this task is a child, sync its parent too
       if (task.parentId) {
         syncParentStatusFromChildren(String(task.parentId));
@@ -314,6 +334,26 @@ export default function EditTaskPage() {
     });
 
     updateTask(stKey, updatedSubtask);
+
+    // ✅ SEND NOTIFICATION
+    try {
+      if (st.createdById && String(st.createdById) !== String(currentUser._id)) {
+        fetch("/api/notifications", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: String(st.createdById),
+            taskId: stKey,
+            senderId: String(currentUser._id),
+            type: "task_progress_updated",
+            title: "Subtask Progress Updated",
+            message: `${currentUser.fullName || "A team member"} changed the status of your subtask "${st.title}" to ${newStatus}.`,
+          }),
+        });
+      }
+    } catch (e) {
+      console.error("Failed to send notification", e);
+    }
 
     // ✅ recalc parent automatically
     if (st.parentId) {
