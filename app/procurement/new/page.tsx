@@ -1,385 +1,244 @@
 "use client";
 
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Area,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-} from "recharts";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useProcurementStore } from "@/store/useProcurementStore";
 
-import { useTaskStore } from "../../../store/useTaskStore";
-import { useIssueStore } from "../../../store/useIssueStore";
-import { useDailyReportStore } from "../../../store/useDailyReportStore";
-import { useProcurementStore } from "../../../store/useProcurementStore";
-import { calculateHealthScore } from "@/lib/healthEngine";
-import { useEffect } from "react";
+export default function ProcurementNewPage() {
+  const router = useRouter();
+  const { items, budgetLimit, addItem } = useProcurementStore();
 
-export default function ExecutiveView() {
-  const { items, budgetLimit } = useProcurementStore();
-  const { tasks } = useTaskStore();
-  const { issues } = useIssueStore();
-  const { reports } = useDailyReportStore();
+  const [title, setTitle] = useState("");
+  const [supplier, setSupplier] = useState("");
+  const [category, setCategory] = useState("Other");
+  const [quantity, setQuantity] = useState(1);
+  const [unitCost, setUnitCost] = useState(0);
+  const [expectedDate, setExpectedDate] = useState("");
+  const [priority, setPriority] = useState("Medium");
+  const [note, setNote] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const sortedItems = [...items].sort(
-    (a, b) =>
-      new Date(a.createdAt).getTime() -
-      new Date(b.createdAt).getTime()
-  );
+  const committedTotal = useMemo(() => {
+    return items
+      .filter((item: any) =>
+        ["Pending Confirmation", "Confirmed", "Delivered"].includes(item.status)
+      )
+      .reduce((sum: number, item: any) => sum + Number(item.totalCost || 0), 0);
+  }, [items]);
 
-  let cumulativeSpent = 0;
+  const remainingBudget = budgetLimit - committedTotal;
+  const totalCost = Number(quantity || 0) * Number(unitCost || 0);
+  const exceedsBudget = totalCost > remainingBudget;
 
-  const chartData = sortedItems.map((item) => {
-    cumulativeSpent += item.quantity * item.unitCost;
-const { setItems, setBudgetLimit } = useProcurementStore();
+  const handleCreateOrder = async () => {
+    setMessage("");
 
-useEffect(() => {
-  const fetchProcurement = async () => {
+    if (!title.trim()) {
+      setMessage("Please enter an item name.");
+      return;
+    }
+
+    if (!expectedDate) {
+      setMessage("Please choose an expected date.");
+      return;
+    }
+
+    if (quantity <= 0) {
+      setMessage("Quantity must be greater than 0.");
+      return;
+    }
+
+    if (unitCost < 0) {
+      setMessage("Unit cost must be valid.");
+      return;
+    }
+
+    if (exceedsBudget) {
+      setMessage("We do not have the necessary budget for these prices.");
+      return;
+    }
+
     try {
-      const res = await fetch("/api/procurement");
-      const data = await res.json();
+      setSaving(true);
 
-      if (data.items) {
-        setItems(data.items);
+      const order = {
+        id: crypto.randomUUID(),
+        projectId,
+        title: title.trim(),
+        supplier: supplier.trim(),
+        category,
+        quantity: Number(quantity),
+        unitCost: Number(unitCost),
+        totalCost,
+        expectedDate: new Date(expectedDate).toISOString(),
+        priority,
+        status: "Pending Confirmation",
+        note: note.trim(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const result = await addItem(order as any);
+
+      if (!result.ok) {
+        setMessage(result.message || "Failed to create order.");
+        return;
       }
 
-      if (data.budgetLimit) {
-        setBudgetLimit(data.budgetLimit);
-      }
-
+      setMessage("Order created successfully and is pending confirmation.");
+      router.push("/procurement");
     } catch (error) {
-      console.error("Procurement API failed", error);
+      console.error(error);
+      setMessage("Failed to create order.");
+    } finally {
+      setSaving(false);
     }
   };
 
-  fetchProcurement();
-}, []);
-
-    return {
-      date: new Date(item.createdAt).toLocaleDateString(),
-      budgetMax: budgetLimit,
-      remaining: Math.max(budgetLimit - cumulativeSpent, 0),
-    };
-  });
-
-  if (chartData.length === 0) {
-    chartData.push({
-      date: new Date().toLocaleDateString(),
-      budgetMax: budgetLimit,
-      remaining: budgetLimit,
-    });
-  }
-
-  // 🔥 Définir remaining AVANT de l'utiliser
-  const remaining =
-    chartData[chartData.length - 1].remaining;
-
-  const totalSpent = budgetLimit - remaining;
-
-  const burnRate =
-    sortedItems.length > 0
-      ? totalSpent / sortedItems.length
-      : 0;
-
-  const estimatedOrdersLeft =
-    burnRate > 0 ? remaining / burnRate : 0;
-
-  const estimatedDepletion =
-    burnRate > 0
-      ? `${Math.round(estimatedOrdersLeft)} orders remaining`
-      : "Stable spending";
-
-  const riskLevel =
-    remaining < budgetLimit * 0.2
-      ? "Critical"
-      : remaining < budgetLimit * 0.4
-      ? "Warning"
-      : "Healthy";
-
-  // 📊 Performance moyenne
-  const quantitativeReports = reports.filter(
-    (r) => r.targetQuantity > 0
-  );
-
-  const avgPerformance =
-    quantitativeReports.length > 0
-      ? quantitativeReports.reduce((sum, r) => {
-          return (
-            sum +
-            (r.actualQuantity / r.targetQuantity) * 100
-          );
-        }, 0) / quantitativeReports.length
-      : 100;
-
-  // 🚨 Issues ouvertes
-  const openIssues = issues.filter(
-    (i) => i.status === "Open"
-  ).length;
-
-  // ⏳ Tâches en retard
-  const today = new Date();
-  const delayedTasks = tasks.filter(
-    (t) =>
-      new Date(t.dueDate) < today &&
-      (t.progress ?? 0) < 100
-  ).length;
-
-  // 💰 Risk financier
-  const riskScore =
-    remaining < budgetLimit * 0.2
-      ? 80
-      : remaining < budgetLimit * 0.4
-      ? 50
-      : 20;
-
-  // 📦 Supply Risk
-  const supplyRiskScore = items.filter(
-    (i) => i.status !== "Delivered"
-  ).length * 5;
-
-  // 🔥 HEALTH SCORE
-  const healthScore = calculateHealthScore({
-    avgPerformance: Number(avgPerformance),
-    openIssues,
-    delayedTasks,
-    financialRisk: riskScore,
-    supplyRisk: supplyRiskScore,
-  });
-
-  // 🔥 Category Spending
-  const categoryMap: Record<string, number> = {};
-
-  items.forEach((item) => {
-    const cost = item.quantity * item.unitCost;
-    const category = item.category || "Other";
-    categoryMap[category] =
-      (categoryMap[category] || 0) + cost;
-  });
-
-  const categoryData = Object.entries(categoryMap).map(
-    ([name, value]) => ({
-      name,
-      value,
-    })
-  );
-
-  const COLORS = [
-    "#3b82f6",
-    "#ef4444",
-    "#22c55e",
-    "#facc15",
-    "#a855f7",
-  ];
-
-  // 🔥 Projection
-  const projectionData = [...chartData];
-
-  if (burnRate > 0) {
-    let projectedRemaining = remaining;
-
-    for (let i = 1; i <= 5; i++) {
-      projectedRemaining -= burnRate;
-
-      projectionData.push({
-        date: `+${i}`,
-        budgetMax: budgetLimit,
-        remaining: Math.max(projectedRemaining, 0),
-      });
-    }
-  }
-
-  // 🔥 Anomaly detection
-  const anomaly = items.some(
-    (i) =>
-      i.quantity * i.unitCost >
-      budgetLimit * 0.25
-  );
-
-  let executiveSummary =
-    "Financial performance stable.";
-
-  if (riskLevel === "Critical")
-    executiveSummary =
-      "Budget critical. Immediate cost restructuring required.";
-
-  if (anomaly)
-    executiveSummary +=
-      " Large procurement anomaly detected.";
-
   return (
-    <div className="p-10 text-white bg-[#0b1220] min-h-screen">
+    <div className="min-h-screen bg-[#0b1220] text-white p-8">
+      <div className="max-w-3xl mx-auto bg-[#111827] rounded-2xl border border-gray-800 p-8">
+        <h1 className="text-2xl font-bold mb-6">Create Procurement Order</h1>
 
-      <h1 className="text-3xl font-bold mb-4">
-        Executive Financial Overview
-      </h1>
-
-      {/* 🔥 Health Score */}
-      <div className="text-4xl font-bold mb-6">
-        Health Score: {healthScore}/100
-      </div>
-
-      {/* 🔥 Global Status Badge */}
-      <div
-        className={`inline-block px-4 py-2 rounded-full font-bold mb-6 ${
-          riskLevel === "Critical"
-            ? "bg-red-600 text-white"
-            : riskLevel === "Warning"
-            ? "bg-yellow-500 text-black"
-            : "bg-green-600 text-white"
-        }`}
-      >
-        Project Status: {riskLevel}
-      </div>
-
-      {/* KPI ROW */}
-      <div className="grid grid-cols-4 gap-6 mb-10">
-        <Kpi title="Total Budget" value={`$${budgetLimit.toFixed(0)}`} />
-        <Kpi title="Total Spent" value={`$${totalSpent.toFixed(0)}`} />
-        <Kpi title="Remaining" value={`$${remaining.toFixed(0)}`} />
-        <Kpi title="Burn Rate" value={`$${burnRate.toFixed(0)} / order`} />
-        <Kpi
-          title="Spending Velocity"
-          value={`$${(
-            totalSpent /
-            (sortedItems.length || 1)
-          ).toFixed(0)} avg/order`}
-        />
-      </div>
-
-      {/* Projection */}
-      <div className="bg-indigo-600/20 border border-indigo-500 p-5 rounded-xl mb-8">
-        📅 Projection: {estimatedDepletion}
-      </div>
-
-      {/* Risk */}
-      <div
-        className={`mb-8 p-5 rounded-xl font-bold text-center ${
-          riskLevel === "Critical"
-            ? "bg-red-600/20 text-red-400 border border-red-500"
-            : riskLevel === "Warning"
-            ? "bg-yellow-600/20 text-yellow-400 border border-yellow-500"
-            : "bg-green-600/20 text-green-400 border border-green-500"
-        }`}
-      >
-        Risk Status: {riskLevel}
-      </div>
-
-      {/* Chart */}
-      <div className="bg-[#111827] p-6 rounded-xl shadow-lg">
-        <ResponsiveContainer width="100%" height={350}>
-          <LineChart data={projectionData}>
-            <XAxis dataKey="date" stroke="#9ca3af" />
-            <YAxis stroke="#9ca3af" />
-            <Tooltip />
-
-            <Area
-              type="monotone"
-              dataKey="remaining"
-              stroke="#ef4444"
-              fill="#ef4444"
-              fillOpacity={0.15}
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="md:col-span-2">
+            <label className="block text-sm text-gray-400 mb-2">Item Name</label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
+              placeholder="e.g. Stainless steel pipe"
             />
+          </div>
 
-            <Line
-              type="monotone"
-              dataKey="budgetMax"
-              stroke="#22c55e"
-              strokeWidth={2}
-              dot={false}
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Supplier</label>
+            <input
+              value={supplier}
+              onChange={(e) => setSupplier(e.target.value)}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
+              placeholder="Supplier name"
             />
+          </div>
 
-            <Line
-              type="monotone"
-              dataKey="remaining"
-              stroke="#f97316"
-              strokeDasharray="5 5"
-              dot={false}
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Category</label>
+            <input
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
+              placeholder="Materials / Electronics / Other"
             />
+          </div>
 
-            <Line
-              type="monotone"
-              dataKey="remaining"
-              stroke="#ef4444"
-              strokeWidth={3}
-              dot={{ r: 4 }}
-              isAnimationActive
-              animationDuration={1200}
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Quantity</label>
+            <input
+              type="number"
+              min={1}
+              value={quantity}
+              onChange={(e) => setQuantity(Number(e.target.value))}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
             />
-          </LineChart>
-        </ResponsiveContainer>
+          </div>
 
-        <div className="mt-8 bg-gradient-to-r from-purple-600/20 to-blue-600/20 p-6 rounded-xl border border-purple-500">
-          <h3 className="font-bold mb-2">
-            AI Executive Analysis
-          </h3>
-          <p className="text-gray-300">
-            {executiveSummary}
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Unit Cost</label>
+            <input
+              type="number"
+              min={0}
+              value={unitCost}
+              onChange={(e) => setUnitCost(Number(e.target.value))}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Expected Date</label>
+            <input
+              type="date"
+              value={expectedDate}
+              onChange={(e) => setExpectedDate(e.target.value)}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Priority</label>
+            <select
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
+            >
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-sm text-gray-400 mb-2">Project ID (optional)</label>
+            <input
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
+              placeholder="Optional project id"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-sm text-gray-400 mb-2">Note</label>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
+              placeholder="Extra details for the order"
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 space-y-2 bg-[#0b1220] border border-gray-700 rounded-xl p-4">
+          <p>Budget Limit: <span className="font-bold">${budgetLimit.toFixed(2)}</span></p>
+          <p>Already Committed: <span className="font-bold">${committedTotal.toFixed(2)}</span></p>
+          <p>Remaining Budget: <span className="font-bold">${remainingBudget.toFixed(2)}</span></p>
+          <p>Total Order Cost: <span className="font-bold">${totalCost.toFixed(2)}</span></p>
+          <p>
+            Status at creation:{" "}
+            <span className="px-2 py-1 rounded bg-yellow-500/20 text-yellow-300">
+              Pending Confirmation
+            </span>
           </p>
+          {exceedsBudget && (
+            <p className="text-red-400 font-semibold">
+              We do not have the necessary budget for these prices.
+            </p>
+          )}
+        </div>
+
+        {message && (
+          <div className="mt-4 text-sm text-cyan-300">{message}</div>
+        )}
+
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={handleCreateOrder}
+            disabled={saving || exceedsBudget}
+            className="bg-blue-600 hover:bg-blue-700 px-5 py-3 rounded-lg disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Create Order"}
+          </button>
+
+          <button
+            onClick={() => router.push("/procurement")}
+            className="bg-gray-700 hover:bg-gray-600 px-5 py-3 rounded-lg"
+          >
+            Cancel
+          </button>
         </div>
       </div>
-
-      {/* Pie */}
-      <div className="mt-12 bg-[#111827] p-6 rounded-xl shadow-lg">
-        <h2 className="text-lg font-bold mb-4">
-          Spending by Category
-        </h2>
-
-        <ResponsiveContainer width="100%" height={300}>
-          <PieChart>
-            <Pie
-              data={categoryData}
-              dataKey="value"
-              nameKey="name"
-              outerRadius={100}
-              label
-            >
-              {categoryData.map((_, index) => (
-                <Cell
-                  key={index}
-                  fill={
-                    COLORS[
-                      index % COLORS.length
-                    ]
-                  }
-                />
-              ))}
-            </Pie>
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
-
-      <button
-        onClick={() => window.print()}
-        className="mt-8 bg-indigo-600 hover:bg-indigo-700 px-5 py-3 rounded-lg shadow-lg"
-      >
-        Export Executive Report (PDF)
-      </button>
-    </div>
-  );
-}
-
-function Kpi({
-  title,
-  value,
-}: {
-  title: string;
-  value: string;
-}) {
-  return (
-    <div className="bg-[#111827] p-6 rounded-xl shadow-lg">
-      <p className="text-gray-400 text-sm mb-2">
-        {title}
-      </p>
-      <p className="text-2xl font-bold">
-        {value}
-      </p>
     </div>
   );
 }

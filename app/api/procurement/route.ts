@@ -1,61 +1,33 @@
-import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongodb";
-import Procurement from "@/models/procurement";
+import mongoose, { Schema, models } from "mongoose";
 
-export async function GET() {
-  try {
-    await connectDB();
-    const items = await Procurement.find().sort({ createdAt: 1 });
-    return NextResponse.json(items);
-  } catch (error: any) {
-    return NextResponse.json(
-      { message: error.message || "Failed to fetch procurement items" },
-      { status: 500 }
-    );
-  }
-}
+const ProcurementSchema = new Schema(
+  {
+    id: { type: String, required: true, unique: true },
+    projectId: { type: String, default: "" },
 
-export async function POST(req: Request) {
-  try {
-    await connectDB();
+    title: { type: String, required: true },
+    supplier: { type: String, default: "" },
+    category: { type: String, default: "Other" },
 
-    const body = await req.json();
+    quantity: { type: Number, required: true, min: 1 },
+    unitCost: { type: Number, required: true, min: 0 },
+    totalCost: { type: Number, required: true, min: 0 },
 
-    // minimal validation
-    if (!body?.id || !body?.title || body?.quantity == null || body?.unitCost == null || !body?.expectedDate || !body?.createdAt) {
-      return NextResponse.json(
-        { message: "Missing required fields" },
-        { status: 400 }
-      );
-    }
+    expectedDate: { type: String, required: true },
+    priority: { type: String, default: "Medium" },
 
-    const exists = await Procurement.findOne({ id: body.id });
-    if (exists) {
-      return NextResponse.json(
-        { message: "Procurement item already exists" },
-        { status: 400 }
-      );
-    }
+    // Pending Confirmation / Confirmed / Cancelled / Delivered
+    status: { type: String, default: "Pending Confirmation" },
 
-    const newItem = await Procurement.create({
-      id: body.id,
-      projectId: body.projectId || "",
-      title: body.title,
-      supplier: body.supplier || "",
-      category: body.category || "Other",
-      quantity: Number(body.quantity),
-      unitCost: Number(body.unitCost),
-      expectedDate: body.expectedDate,
-      priority: body.priority || "Medium",
-      status: body.status || "Pending",
-      createdAt: body.createdAt,
-    });
+    note: { type: String, default: "" },
 
-    return NextResponse.json(newItem, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json(
-      { message: error.message || "Failed to create procurement item" },
-      { status: 500 }
-    );
-  }
-}
+    createdAt: { type: String, required: true },
+    updatedAt: { type: String, default: "" },
+  },
+  { versionKey: false }
+);
+
+const Procurement =
+  models.Procurement || mongoose.model("Procurement", ProcurementSchema);
+
+export default Procurement;

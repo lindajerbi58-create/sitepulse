@@ -2,20 +2,27 @@ import mongoose, { Schema, models } from "mongoose";
 
 const ProcurementSchema = new Schema(
   {
-    id: { type: String, required: true, unique: true }, // uuid côté front
-    projectId: { type: String, default: "" }, // si tu veux multi-project
+    id: { type: String, required: true, unique: true },
+    projectId: { type: String, default: "" },
+
     title: { type: String, required: true },
     supplier: { type: String, default: "" },
     category: { type: String, default: "Other" },
 
-    quantity: { type: Number, required: true },
-    unitCost: { type: Number, required: true },
+    quantity: { type: Number, required: true, min: 1 },
+    unitCost: { type: Number, required: true, min: 0 },
+    totalCost: { type: Number, required: true, min: 0 },
 
-    expectedDate: { type: String, required: true }, // ISO string
-    priority: { type: String, default: "Medium" }, // Low/Medium/High
-    status: { type: String, default: "Pending" }, // ex: Pending / En Cours / Delivered
+    expectedDate: { type: String, required: true },
+    priority: { type: String, default: "Medium" },
 
-    createdAt: { type: String, required: true }, // ISO string
+    // Pending Confirmation / Confirmed / Cancelled / Delivered
+    status: { type: String, default: "Pending Confirmation" },
+
+    note: { type: String, default: "" },
+
+    createdAt: { type: String, required: true },
+    updatedAt: { type: String, default: "" },
   },
   { versionKey: false }
 );
