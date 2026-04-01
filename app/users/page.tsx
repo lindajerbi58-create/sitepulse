@@ -710,7 +710,7 @@ export default function UsersPage() {
           href={`/tasks/${normalizeId(t)}`}
           className="inline-block text-blue-400 hover:text-blue-300 underline"
         >
-          Open this task
+          Open this task NOW
         </Link>
       </div>
     ))}
