@@ -306,10 +306,20 @@ const resolvedIssues = uniqueIssues.filter((i: any) => i.status === "Resolved");
 
   return (
     <div className="min-h-screen bg-[#0b1220] text-white p-8">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold">Issues</h1>
+     <div className="flex justify-between items-center mb-8">
+  <div>
+    <Link
+      href="/dashboard"
+      className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-3"
+    >
+      <span className="text-lg">←</span>
+      <span>Back to Dashboard</span>
+    </Link>
 
-        <div className="flex gap-3">
+    <h1 className="text-2xl font-bold">Issues</h1>
+  </div>
+
+  <div className="flex gap-3">
           <button
             onClick={() => setShowCreateModal(true)}
             className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg"
