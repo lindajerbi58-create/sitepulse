@@ -120,7 +120,8 @@ Assignment is strictly restricted by hierarchy:
 | State        | Zustand + Persist  | Global state + Local storage |
 | Styling      | TailwindCSS        | Industrial UI                |
 | Auth         | Local state (MVP)  | Future JWT ready             |
-| Storage      | LocalStorage       | Backendless MVP              |
+| Backend      | Next.js API Routes | Server-side logic            |
+| Database     | MongoDB (Mongoose) | Data persistence             |
 | Architecture | Modular App Router | Clean separation             |
 
 ---
