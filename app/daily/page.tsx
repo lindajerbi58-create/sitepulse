@@ -5,6 +5,7 @@ import { useDailyReportStore } from "@/store/useDailyReportStore";
 import { useTaskStore } from "@/store/useTaskStore";
 import { useUserStore } from "@/store/useUserStore";
 import { canAssign } from "@/lib/hierarchy";
+
 import Link from "next/link";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -14,7 +15,7 @@ export default function DailyReportsPage() {
 const setCurrentUser = useUserStore((state) => state.setCurrentUser);
   const currentUser = useUserStore((state) => state.currentUser);
   const users = useUserStore((state) => state.users);
-
+const [selectedDate, setSelectedDate] = useState("");
 const currentUserId = String(currentUser?._id || "");
   const [backendReports, setBackendReports] = useState<any[]>([]);
   const [filterMode, setFilterMode] = useState<"my" | "team" | "all">("all");
@@ -207,6 +208,21 @@ const visibleReports = allReports;
   if (filterMode === "all") {
     filteredReports = visibleReports;
   }
+  if (selectedDate) {
+  filteredReports = filteredReports.filter((r) => {
+    const reportDate = safeDate(r.date);
+    if (!reportDate) return false;
+
+    const localYear = reportDate.getFullYear();
+    const localMonth = String(reportDate.getMonth() + 1).padStart(2, "0");
+    const localDay = String(reportDate.getDate()).padStart(2, "0");
+
+    const formattedLocalDate = `${localYear}-${localMonth}-${localDay}`;
+
+    return formattedLocalDate === selectedDate;
+  });
+}
+
 console.log("currentUserId =", currentUserId);
 console.log("allReports =", allReports);
 console.log("visibleReports =", visibleReports);
@@ -217,7 +233,7 @@ console.log("last24hReports =", last24hReports);
     <div className="min-h-screen bg-[#0b1220] text-white p-8">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-2xl font-bold">Daily Reports</h1>
+          <h1 className="text-2xl font-bold">Last Reports</h1>
           <p className="text-sm text-gray-400 mt-1">
   All visible changes
 </p>
@@ -233,18 +249,29 @@ console.log("last24hReports =", last24hReports);
             <option value="team">My Team</option>
             <option value="all">All Visible</option>
           </select>
-
+<input
+  type="date"
+  value={selectedDate}
+  onChange={(e) => setSelectedDate(e.target.value)}
+  className="bg-[#1f2937] px-3 py-2 rounded-lg"
+/>
           <button
             onClick={exportDailyReportPDF}
             className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg"
           >
             Export PDF
           </button>
+          <button
+  onClick={() => setSelectedDate("")}
+  className="bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded-lg"
+>
+  Reset Date
+</button>
         </div>
       </div>
 
       <div className="mb-8 bg-[#111827] p-6 rounded-2xl border border-gray-800">
-        <h2 className="text-lg font-semibold mb-2">Changes in last 24h</h2>
+        <h2 className="text-lg font-semibold mb-2">Changes in last projects</h2>
         <p className="text-3xl font-bold text-blue-400">
           {last24hReports.length}
         </p>

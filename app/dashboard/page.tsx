@@ -640,7 +640,7 @@ export default function DashboardPage() {
           href="/daily"
           className="bg-gradient-to-br from-purple-600 to-purple-800 p-4 rounded-2xl shadow-lg hover:scale-105 transition transform text-center"
         >
-          📝 Daily Reports
+          📝 Last Reports
         </Link>
 
         <Link
