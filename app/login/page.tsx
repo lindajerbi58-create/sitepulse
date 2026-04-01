@@ -62,12 +62,7 @@ const setCurrentUser = useUserStore((state) => state.setCurrentUser);
             />
           </div>
 
-          <div className="flex items-center mt-3 mb-6">
-            <input type="checkbox" className="mr-2" />
-            <span className="text-sm text-gray-600">
-              Remember this device
-            </span>
-          </div>
+          
 
           {/* 🔥 BUTTON CONNECTED TO BACKEND */}
           <button
