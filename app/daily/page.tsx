@@ -231,6 +231,12 @@ const last24hReports = filteredReports;
 console.log("last24hReports =", last24hReports);
   return (
     <div className="min-h-screen bg-[#0b1220] text-white p-8">
+      <Link
+  href="/dashboard"
+  className="flex items-center gap-2 text-gray-400 hover:text-white mb-6"
+>
+  ← Back to Dashboard
+</Link>
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-2xl font-bold">Last Reports</h1>
