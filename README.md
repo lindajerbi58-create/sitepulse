@@ -233,22 +233,76 @@ http://localhost:3000
 ```
 sitepulse/
 ├── app/
+│   ├── api/
+│   │   ├── daily/
+│   │   ├── tasks/
+│   │   ├── users/
+│   │   ├── procurement/
+│   │   ├── notifications/
+│   │   └── projects/
+│   │
 │   ├── dashboard/
+│   │   ├── executive/
+│   │   └── page.tsx
+│   │
+│   ├── daily/
+│   │   ├── report/
+│   │   └── page.tsx
+│   │
+│   ├── issues/
 │   ├── login/
 │   ├── register/
 │   ├── organization/
+│   ├── procurement/
+│   ├── projects/
 │   ├── tasks/
-│   └── layout.tsx
+│   ├── users/
+│   │
+│   ├── layout.tsx
+│   ├── globals.css
+│   └── page.tsx
+│
+├── components/
+│
+├── lib/
+│   ├── mongodb.ts
+│   ├── hierarchy.ts
+│   ├── delayPredictor.ts
+│   └── healthEngine.ts
+│
+├── models/
+│   ├── user.ts
+│   ├── task.ts
+│   ├── project.ts
+│   ├── procurement.ts
+│   ├── issue.ts
+│   ├── daily.ts
+│   ├── DailyReportSubmission.ts
+│   └── Notification.ts
+│
 ├── store/
 │   ├── useUserStore.ts
 │   ├── useTaskStore.ts
+│   ├── useProjectStore.ts
+│   ├── useProcurementStore.ts
+│   ├── useIssueStore.ts
+│   └── useDailyReportStore.ts
+│
 ├── types/
 │   ├── user.ts
 │   ├── task.ts
-├── lib/
-│   └── hierarchy.ts
+│   ├── procurement.ts
+│   ├── issue.ts
+│   └── dailyReport.ts
+│
+├── assets/
+│   └── screenshots/
+│
 ├── public/
+│
+├── .env.local
 ├── package.json
+├── next.config.js
 └── README.md
 ```
 
