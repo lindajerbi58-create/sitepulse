@@ -49,9 +49,7 @@ const setCurrentUser = useUserStore((state) => state.setCurrentUser);
           <div className="mb-2">
             <div className="flex justify-between text-xs text-gray-600 uppercase">
               <span>Password</span>
-              <button className="text-blue-600 normal-case">
-                Forgot Password?
-              </button>
+              
             </div>
 
             <input

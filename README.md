@@ -298,6 +298,43 @@ Future version:
 * JWT Authentication
 * Audit trail logging
 
+## 📸 Screenshots
+
+### 🧠 Dashboard Overview
+![Dashboard 1](assets/screenshots/Dashboard1.png)
+![Dashboard 2](assets/screenshots/dashboard2.png)
+![Dashboard 3](assets/screenshots/dashboard3.png)
+![Dashboard 4](assets/screenshots/dashboard4.png)
+
+---
+
+### 📊 Reports & Progress Tracking
+![Reports](assets/screenshots/reports.png)
+
+---
+
+### 🧩 Task Management
+![Task](assets/screenshots/task1.png)
+
+---
+
+### 🏗 Project Management
+![Project](assets/screenshots/project.png)
+
+---
+
+### ⚠️ Issue Tracking
+![Issues](assets/screenshots/issue.png)
+
+---
+
+### 💰 Procurement
+![Procurement](assets/screenshots/proc.png)
+
+---
+
+### ⏱ Overdue / Monitoring
+![Overdue](assets/screenshots/over.png)
 ---
 
 ## 👤 Author
