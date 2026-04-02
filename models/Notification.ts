@@ -16,7 +16,7 @@ const NotificationSchema = new Schema(
     },
     type: {
       type: String,
-      enum: ["task_progress_updated"],
+      enum: ["task_progress_updated", "task_completed"],
       default: "task_progress_updated",
     },
     title: {
