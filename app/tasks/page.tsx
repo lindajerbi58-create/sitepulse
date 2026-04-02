@@ -774,16 +774,18 @@ export default function TasksPage() {
 
     return (
       <div key={itemId} className="mt-4">
+       
         <div
-          className={`bg-[#111827] border p-5 rounded-2xl shadow-lg transition-all duration-200 ${
-            computedStatus === "Complete"
-              ? "border-gray-700 opacity-70"
-              : isDelayed
-                ? "border-red-500/40 hover:border-red-400"
-                : "hover:border-blue-500 border-gray-800"
-          } ${level === 0 ? "" : "bg-[#0f172a]"}`}
-          style={{ marginLeft: `${level * 26}px` }}
-        >
+  onClick={() => router.push(`/tasks/${itemId}`)}
+  className={`cursor-pointer bg-[#111827] border p-5 rounded-2xl shadow-lg transition-all duration-200 ${
+    computedStatus === "Complete"
+      ? "border-gray-700 opacity-70"
+      : isDelayed
+        ? "border-red-500/40 hover:border-red-400"
+        : "hover:border-blue-500 border-gray-800"
+  } ${level === 0 ? "" : "bg-[#0f172a]"}`}
+  style={{ marginLeft: `${level * 26}px` }}
+>
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
