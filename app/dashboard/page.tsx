@@ -324,22 +324,23 @@ export default function DashboardPage() {
     });
   }, [teamMembers, scopedTasks]);
 
-  const reportsSubmittedTodayByTeam = useMemo(() => {
-    const todayStr = new Date().toDateString();
+ const reportsSubmittedTodayByTeam = useMemo(() => {
+  const todayStr = new Date().toDateString();
 
-    const submittedIds = new Set(
-      allReports
-        .filter((r: any) => {
-          const d = safeDate(r.date);
-          if (!d) return false;
-          return d.toDateString() === todayStr;
-        })
-        .map((r: any) => normalizeId(r.userId || r.createdById || r.authorId))
-        .filter(Boolean)
-    );
+  const submittedIds = new Set(
+    allReports
+      .filter((r: any) => {
+        const rawDate = r.reportDate || r.date;
+        const d = safeDate(rawDate);
+        if (!d) return false;
+        return d.toDateString() === todayStr;
+      })
+      .map((r: any) => normalizeId(r.userId || r.createdById || r.authorId))
+      .filter(Boolean)
+  );
 
-    return teamMembers.filter((m: any) => submittedIds.has(normalizeId(m))).length;
-  }, [allReports, teamMembers]);
+  return teamMembers.filter((m: any) => submittedIds.has(normalizeId(m))).length;
+}, [allReports, teamMembers]);
 
   const reportsTodayCount = useMemo(() => {
     const todayStr = new Date().toDateString();
@@ -422,11 +423,11 @@ export default function DashboardPage() {
       );
     }
 
-    if (missingReportsToday > 0) {
-      items.push(
-        `Follow up on ${missingReportsToday} missing daily report${missingReportsToday > 1 ? "s" : ""}`
-      );
-    }
+   
+     items.push(
+  `Verify today's daily report${missingReportsToday > 1 ? "s" : ""}`
+);
+    
 
     const overloaded = workloadData.filter(
       (w: any) => w.totalTasks >= 6 || w.delayedTasks >= 3
