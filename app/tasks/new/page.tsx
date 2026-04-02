@@ -119,12 +119,13 @@ export default function NewTaskPage() {
 
         <div className="mb-5">
           <label className="text-gray-400 text-sm">Due Date</label>
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="w-full mt-2 bg-[#1f2937] border border-gray-700 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
-          />
+         <input
+  type="date"
+  min={new Date().toISOString().split("T")[0]}
+  value={dueDate}
+  onChange={(e) => setDueDate(e.target.value)}
+  className="w-full mt-2 bg-[#1f2937] border border-gray-700 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
+/>
         </div>
 
         <div className="mb-8">

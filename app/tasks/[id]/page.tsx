@@ -189,7 +189,42 @@ console.log("projectsData =", projectsData);
     }
   };
 
+const sendProgressNotification = async (
+  task: any,
+  progress: number,
+  status: "Not Started" | "In Progress" | "On Hold" | "Complete"
+) => {
+  const creatorId = normalizeId(task.createdById);
+  const actorId = normalizeId(currentUser);
 
+  if (!creatorId || !actorId || creatorId === actorId) return;
+
+  const type =
+    status === "Complete" ? "task_completed" : "task_progress_updated";
+
+  const title =
+    status === "Complete" ? "Task completed" : "Task progress updated";
+
+  const message =
+    status === "Complete"
+      ? `${currentUser?.fullName || "A user"} completed "${task.title || "Untitled task"}".`
+      : `${currentUser?.fullName || "A user"} updated "${task.title || "Untitled task"}" to ${progress}%.`;
+
+  await fetch("/api/notifications", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      userId: creatorId,
+      taskId: String(task._id || task.id || ""),
+      senderId: actorId,
+      type,
+      title,
+      message,
+    }),
+  });
+};
 const handleProgressUpdate = async (isComplete = false) => {
   console.log("========== HANDLE PROGRESS UPDATE START ==========");
 
@@ -271,7 +306,11 @@ const handleProgressUpdate = async (isComplete = false) => {
     if (!dailyRes.ok) {
       throw new Error(dailyData?.message || "Daily failed");
     }
-
+await sendProgressNotification(
+  task,
+  newProgress,
+  nextStatus as "Not Started" | "In Progress" | "On Hold" | "Complete"
+);
     await loadAllData(true);
 
     setWorkNote("");
