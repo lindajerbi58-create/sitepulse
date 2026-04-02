@@ -194,17 +194,23 @@ export default function DashboardPage() {
     ];
   }, [backendReports]);
 
-  const scopedTasks = useMemo(() => {
-    return dbTasks.filter((t: any) => {
-      const assigneeId = normalizeId(t.assigneeId);
-      const createdById = normalizeId(t.createdById);
+ const scopedTasks = useMemo(() => {
+  const directScoped = dbTasks.filter((t: any) => {
+    const assigneeId = normalizeId(t.assigneeId);
+    return allRelevantUserIds.includes(assigneeId);
+  });
 
-      return (
-        allRelevantUserIds.includes(assigneeId) ||
-        allRelevantUserIds.includes(createdById)
-      );
-    });
-  }, [dbTasks, allRelevantUserIds]);
+  const directScopedIds = new Set(directScoped.map((t: any) => normalizeId(t)));
+
+  // Inclure aussi les subtasks dont le parent est dans scope
+  const subTasks = dbTasks.filter((t: any) => {
+    if (!t.parentId || t.parentId === "" || t.parentId === null) return false;
+    const parentId = normalizeId(t.parentId);
+    return directScopedIds.has(parentId);
+  });
+
+  return [...directScoped, ...subTasks];
+}, [dbTasks, allRelevantUserIds]);
 
   const scopedIssues = useMemo(() => {
     return issues.filter((i: any) => {
@@ -264,11 +270,31 @@ export default function DashboardPage() {
     });
   }, [scopedTasks]);
 
-  const completedTasks = useMemo(() => {
-    return scopedTasks.filter((t: any) => isTaskComplete(t)).length;
-  }, [scopedTasks]);
+ const rootTasks = useMemo(() => {
+  return scopedTasks.filter((t: any) => {
+    return !t.parentId || t.parentId === "" || t.parentId === null;
+  });
+}, [scopedTasks]);
 
-  const totalTasks = scopedTasks.length;
+const totalTasks = rootTasks.length;
+
+const completedTasks = useMemo(() => {
+  return rootTasks.filter((t: any) => {
+    if (isTaskComplete(t)) return true;
+
+    const rootId = normalizeId(t);
+    
+    const subTasks = scopedTasks.filter((st: any) => {
+      if (!st.parentId || st.parentId === "" || st.parentId === null) return false;
+      const parentId = normalizeId(st.parentId); // normalise aussi le parentId
+      return parentId === rootId;
+    });
+
+    console.log(`Task "${t.title}" → subs:`, subTasks.length, subTasks.map((s:any) => ({ title: s.title, complete: isTaskComplete(s) })));
+
+    return subTasks.length > 0 && subTasks.every((st: any) => isTaskComplete(st));
+  }).length;
+}, [rootTasks, scopedTasks]);
   const openIssues = scopedIssues.filter(
     (i: any) => String(i.status || "").toLowerCase() === "open"
   ).length;
@@ -534,7 +560,24 @@ export default function DashboardPage() {
       isComplete: isTaskComplete(t),
     }))
   );
-
+console.log("=== DEBUG TASKS ===");
+console.log("ALL DB TASKS:", dbTasks.map((t: any) => ({
+  title: t.title,
+  id: normalizeId(t),
+  parentId: t.parentId || "NONE",
+  assigneeId: normalizeId(t.assigneeId),
+  status: t.status,
+  progress: t.progress,
+})));
+console.log("SCOPED TASKS:", scopedTasks.map((t: any) => ({
+  title: t.title,
+  id: normalizeId(t),
+  parentId: t.parentId || "NONE",
+})));
+console.log("ROOT TASKS:", rootTasks.map((t: any) => ({
+  title: t.title,
+  id: normalizeId(t),
+})));
   if (!mounted || tasksLoading) {
     return (
       <div className="min-h-screen bg-[#0b1220] text-white flex items-center justify-center">

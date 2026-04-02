@@ -449,7 +449,66 @@ export default function TasksPage() {
       }),
     });
   };
+const updateParentTasksIfCompleted = async (
+  changedTask: Task,
+  allTasks: Task[]
+) => {
+  let currentParentId = normalizeId(changedTask.parentId);
 
+  while (currentParentId) {
+    const parentTask = allTasks.find(
+      (t: Task) => normalizeId(t) === currentParentId
+    );
+
+    if (!parentTask) break;
+
+    const siblings = allTasks.filter(
+      (t: Task) => normalizeId(t.parentId) === currentParentId
+    );
+
+    const allChildrenComplete = siblings.length > 0 && siblings.every((child: Task) => {
+      const childStatus = getComputedStatus(child, allTasks);
+      const childProgress = Math.min(Math.max(Number(child.progress || 0), 0), 100);
+      return childStatus === "Complete" || childProgress >= 100;
+    });
+
+    if (!allChildrenComplete) break;
+
+    const parentRes = await fetch(`/api/tasks/${currentParentId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        progress: 100,
+        status: "Complete",
+      }),
+    });
+
+    if (!parentRes.ok) {
+      const err = await parentRes.json().catch(() => null);
+      throw new Error(err?.error || "Failed to update parent task");
+    }
+
+    const updatedParent = await parentRes.json();
+
+    allTasks = allTasks.map((t: Task) =>
+      normalizeId(t) === currentParentId
+        ? {
+            ...t,
+            ...updatedParent,
+            progress: 100,
+            status: "Complete",
+            updatedAt: updatedParent?.updatedAt || new Date().toISOString(),
+          }
+        : t
+    );
+
+    setTasks(allTasks);
+
+    currentParentId = normalizeId(parentTask.parentId);
+  }
+};
  const handleUpdateTaskProgress = async (task: Task, forcedProgress?: number) => {
   const taskId = normalizeId(task);
   if (!taskId) return;
@@ -490,25 +549,33 @@ export default function TasksPage() {
 
     const updatedTask = await res.json();
 
-    setTasks(
-      safeTasks.map((existing: Task) =>
-        normalizeId(existing) === taskId
-          ? {
-              ...existing,
-              ...updatedTask,
-              progress: updatedTask?.progress ?? nextProgress,
-              status: updatedTask?.status ?? nextStatus,
-              updatedAt: updatedTask?.updatedAt || new Date().toISOString(),
-            }
-          : existing
-      )
-    );
+   const nextTasks = safeTasks.map((existing: Task) =>
+  normalizeId(existing) === taskId
+    ? {
+        ...existing,
+        ...updatedTask,
+        progress: updatedTask?.progress ?? nextProgress,
+        status: updatedTask?.status ?? nextStatus,
+        updatedAt: updatedTask?.updatedAt || new Date().toISOString(),
+      }
+    : existing
+);
+
+setTasks(nextTasks);
 
     setProgressInputs((prev) => ({
       ...prev,
       [taskId]: updatedTask?.progress ?? nextProgress,
     }));
-
+await updateParentTasksIfCompleted(
+  {
+    ...task,
+    ...updatedTask,
+    progress: updatedTask?.progress ?? nextProgress,
+    status: updatedTask?.status ?? nextStatus,
+  },
+  nextTasks
+);
     const myId = String(currentUser?._id || currentUser?.id || "");
     const today = new Date().toISOString().split("T")[0];
 

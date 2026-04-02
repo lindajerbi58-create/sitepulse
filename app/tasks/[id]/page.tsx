@@ -225,6 +225,69 @@ const sendProgressNotification = async (
     }),
   });
 };
+const updateParentTasksIfCompleted = async (
+  changedTask: any,
+  allTasks: any[]
+) => {
+  let currentParentId = normalizeId(changedTask.parentId);
+
+  while (currentParentId) {
+    const parentTask = allTasks.find(
+      (t: any) => normalizeId(t) === currentParentId
+    );
+
+    if (!parentTask) break;
+
+    const siblings = allTasks.filter(
+      (t: any) => normalizeId(t.parentId) === currentParentId
+    );
+
+    const allChildrenComplete =
+      siblings.length > 0 &&
+      siblings.every((child: any) => {
+        const childStatus = getComputedStatus(child, allTasks);
+        const childProgress = Math.min(
+          Math.max(Number(child.progress || 0), 0),
+          100
+        );
+        return childStatus === "Complete" || childProgress >= 100;
+      });
+
+    if (!allChildrenComplete) break;
+
+    const parentRes = await fetch(`/api/tasks/${currentParentId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        progress: 100,
+        status: "Complete",
+      }),
+    });
+
+    if (!parentRes.ok) {
+      const err = await parentRes.json().catch(() => null);
+      throw new Error(err?.message || "Failed to update parent task");
+    }
+
+    const updatedParent = await parentRes.json();
+
+    allTasks = allTasks.map((t: any) =>
+      normalizeId(t) === currentParentId
+        ? {
+            ...t,
+            ...updatedParent,
+            progress: 100,
+            status: "Complete",
+            updatedAt: updatedParent?.updatedAt || new Date().toISOString(),
+          }
+        : t
+    );
+
+    setTasks(allTasks);
+
+    currentParentId = normalizeId(parentTask.parentId);
+  }
+};
 const handleProgressUpdate = async (isComplete = false) => {
   console.log("========== HANDLE PROGRESS UPDATE START ==========");
 
@@ -265,7 +328,29 @@ const handleProgressUpdate = async (isComplete = false) => {
     });
 
     const taskData = await taskRes.json().catch(() => null);
+const nextTasks = (Array.isArray(tasks) ? tasks : []).map((existing: any) =>
+  normalizeId(existing) === taskId
+    ? {
+        ...existing,
+        ...taskData,
+        progress: taskData?.progress ?? newProgress,
+        status: taskData?.status ?? nextStatus,
+        updatedAt: taskData?.updatedAt || new Date().toISOString(),
+      }
+    : existing
+);
 
+setTasks(nextTasks);
+
+await updateParentTasksIfCompleted(
+  {
+    ...task,
+    ...taskData,
+    progress: taskData?.progress ?? newProgress,
+    status: taskData?.status ?? nextStatus,
+  },
+  nextTasks
+);
     console.log("PATCH status =", taskRes.status);
     console.log("PATCH response =", taskData);
 
