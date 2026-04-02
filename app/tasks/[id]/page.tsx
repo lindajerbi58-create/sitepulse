@@ -410,7 +410,7 @@ useEffect(() => {
   const computedTaskStatus = task
     ? getComputedStatus(task, tasks || [])
     : "Not Started";
-
+const isTaskLocked = computedTaskStatus === "Complete" || progress >= 100;
   const teamMembers = useMemo(() => {
     if (!Array.isArray(users) || !currentUser) return [];
 
@@ -432,13 +432,14 @@ useEffect(() => {
   }, [users, currentUser]);
 
   const canAddSubtask = !!(
-    currentUser &&
-    task &&
-    (normalizeId(task.createdById) ===
-      String(currentUser._id || currentUser.id || "") ||
-      normalizeId(task.assigneeId) ===
-      String(currentUser._id || currentUser.id || ""))
-  );
+  currentUser &&
+  task &&
+  !isTaskLocked &&
+  (normalizeId(task.createdById) ===
+    String(currentUser._id || currentUser.id || "") ||
+    normalizeId(task.assigneeId) ===
+    String(currentUser._id || currentUser.id || ""))
+);
 
   const historyItems = useMemo(() => {
     if (!task) return [];
@@ -911,12 +912,18 @@ useEffect(() => {
             ← Back
           </Link>
 
-          <Link
-            href={`/tasks/${String(task.id || task._id)}/edit`}
-            className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg"
-          >
-            Edit Task
-          </Link>
+         {isTaskLocked ? (
+  <div className="bg-gray-600 text-gray-300 px-4 py-2 rounded-lg cursor-not-allowed opacity-60">
+    Edit Task
+  </div>
+) : (
+  <Link
+    href={`/tasks/${String(task.id || task._id)}/edit`}
+    className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg"
+  >
+    Edit Task
+  </Link>
+)}
         </div>
       </div>
 
@@ -1045,7 +1052,13 @@ useEffect(() => {
       </div>
 
       {subtasks.length === 0 && String(currentUser?._id || currentUser?.id) === normalizeId(task?.assigneeId) && (
-        <div className="mt-6 bg-[#111827] border border-gray-800 rounded-2xl p-6 shadow-xl">
+        <div
+  className={`mt-6 border rounded-2xl p-6 ${
+    isTaskLocked
+      ? "bg-gray-900 border-gray-700 opacity-60"
+      : "bg-[#111827] border-gray-800"
+  }`}
+>
           <h2 className="text-xl font-bold mb-4">Update Progress</h2>
 
           {computedTaskStatus === "Complete" || Number(task?.progress) >= 100 ? (
@@ -1146,7 +1159,11 @@ useEffect(() => {
 
       <div className="mt-6 bg-[#111827] border border-gray-800 rounded-2xl p-6">
         <h2 className="text-lg font-semibold mb-4">Add Subtask</h2>
-
+{isTaskLocked && (
+  <div className="mb-4 rounded-lg border border-gray-600 bg-gray-800 px-4 py-3 text-sm text-gray-300">
+    This task is completed. Editing and adding subtasks are disabled.
+  </div>
+)}
         {!canAddSubtask && (
           <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-300">
             You can view this task, but you are not allowed to add subtasks to it.

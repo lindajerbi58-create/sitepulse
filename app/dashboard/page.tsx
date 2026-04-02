@@ -862,11 +862,10 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {workloadData.map((member: any, index: number) => (
-                <Link
-                  href={`/users/${member.id}`}
-                  key={`${member.id}-${index}`}
-                  className="block bg-[#0b1220] border border-gray-800 rounded-lg p-4 hover:border-gray-600 transition"
-                >
+                <div
+  key={`${member.id}-${index}`}
+  className="bg-[#0b1220] border border-gray-800 rounded-lg p-4"
+>
                   <div className="flex justify-between items-start gap-4">
                     <div>
                       <div className="font-medium text-white">
@@ -895,7 +894,7 @@ export default function DashboardPage() {
                     <MiniStat label="Doing" value={member.inProgress} />
                     <MiniStat label="Done" value={member.completed} />
                   </div>
-                </Link>
+                </div>
               ))}
             </div>
           )}
