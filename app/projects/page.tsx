@@ -171,6 +171,12 @@ export default function ProjectsPage() {
   return (
     <div className="min-h-screen bg-[#0b1220] text-white p-8">
       <div className="max-w-5xl mx-auto">
+        <button
+  onClick={() => router.push("/dashboard")}
+  className="mb-6 flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition"
+>
+  ← Back to Dashboard
+</button>
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-bold">Projects</h1>
