@@ -377,7 +377,10 @@ export default function DashboardPage() {
 
   const delayedPenalty = delayedTasks * 10;
   const issuesPenalty = openIssues * 5;
-  const performancePenalty = Math.max(0, 100 - avgPerformance);
+ const performancePenalty =
+  quantitativeReports.length === 0
+    ? 0
+    : Math.max(0, 100 - avgPerformance);
   const criticalPenalty = criticalTasks.length * 6;
   const missingReportsPenalty = missingReportsToday * 8;
   const workloadPenalty =
