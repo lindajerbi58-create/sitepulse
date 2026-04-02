@@ -1042,6 +1042,13 @@ export default function TasksPage() {
 
   return (
     <div className="min-h-screen bg-[#0b1220] text-white p-8">
+      <button
+  onClick={() => router.push("/dashboard")}
+  className="mb-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-700 bg-[#111827] text-blue-400 hover:bg-[#1a2233] hover:text-blue-300 transition"
+>
+  <span className="text-lg">←</span>
+  <span>Back to Dashboard</span>
+</button>
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
         <h1 className="text-2xl font-bold">Task Control Center</h1>
 
