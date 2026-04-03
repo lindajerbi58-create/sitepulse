@@ -152,7 +152,11 @@ export default function IssuesPage() {
       (task: Task) => String(task.projectId || "") === String(form.projectId)
     );
   }, [form.projectId, myVisibleTasks]);
-
+const selectedTask = useMemo(() => {
+  return filteredTasksByProject.find(
+    (task: Task) => normalizeId(task) === String(form.taskId)
+  );
+}, [filteredTasksByProject, form.taskId]);
  const uniqueIssues = useMemo(() => {
   const map = new Map();
 
@@ -347,7 +351,7 @@ const resolvedIssues = uniqueIssues.filter((i: any) => i.status === "Resolved");
           const task = (tasks || []).find(
             (t: Task) => normalizeId(t) === String(issue.taskId || "")
           );
-
+const isTaskCompleted = task?.status === "Complete";
           const owner = (users || []).find(
             (u: User) => normalizeId(u) === String(issue.ownerId || "")
           );
@@ -388,7 +392,11 @@ const resolvedIssues = uniqueIssues.filter((i: any) => i.status === "Resolved");
               <p className="text-sm text-gray-400 mt-2">
                 Task: {task?.title || "-"}
               </p>
-
+{isTaskCompleted && (
+  <p className="text-xs text-yellow-400 mt-1 italic">
+    This task has already been completed.
+  </p>
+)}
               <p className="text-sm text-gray-400">
                 Owner: {owner?.fullName || "No superior assigned"}
               </p>
@@ -431,7 +439,7 @@ const resolvedIssues = uniqueIssues.filter((i: any) => i.status === "Resolved");
           const task = (tasks || []).find(
             (t: Task) => normalizeId(t) === String(issue.taskId || "")
           );
-
+const isTaskCompleted = task?.status === "Complete";
           return (
             <div
               key={issue.id || issue._id}
@@ -445,7 +453,11 @@ const resolvedIssues = uniqueIssues.filter((i: any) => i.status === "Resolved");
               <p className="text-sm text-gray-500 mt-2">
                 Task: {task?.title || "-"}
               </p>
-
+{isTaskCompleted && (
+  <p className="text-xs text-yellow-400 mt-1 italic">
+    This task has already been completed.
+  </p>
+)}
               <p className="text-sm text-gray-500 mt-2">
                 Resolved on{" "}
                 {issue.resolvedAt
@@ -501,28 +513,34 @@ const resolvedIssues = uniqueIssues.filter((i: any) => i.status === "Resolved");
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm text-gray-400 mb-2">
-                  Task
-                </label>
-                <select
-                  value={form.taskId}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      taskId: e.target.value,
-                    }))
-                  }
-                  className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
-                >
-                  <option value="">Select task</option>
-                  {filteredTasksByProject.map((task: Task) => (
-                    <option key={normalizeId(task)} value={normalizeId(task)}>
-                      {task.title || "Untitled task"}
-                    </option>
-                  ))}
-                </select>
-              </div>
+           <div>
+  <label className="block text-sm text-gray-400 mb-2">
+    Task
+  </label>
+  <select
+    value={form.taskId}
+    onChange={(e) =>
+      setForm((prev) => ({
+        ...prev,
+        taskId: e.target.value,
+      }))
+    }
+    className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
+  >
+    <option value="">Select task</option>
+    {filteredTasksByProject.map((task: Task) => (
+      <option key={normalizeId(task)} value={normalizeId(task)}>
+        {task.title || "Untitled task"}
+      </option>
+    ))}
+  </select>
+
+  {selectedTask?.status === "Complete" && (
+    <p className="mt-2 text-sm text-yellow-400">
+      This task is already completed — it is a past task.
+    </p>
+  )}
+</div>
 
               <div className="md:col-span-2">
                 <label className="block text-sm text-gray-400 mb-2">
