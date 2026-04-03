@@ -48,7 +48,7 @@ type Project = {
 };
 
 export default function IssuesPage() {
- const { issues, updateIssue, addIssue, setIssues } = useIssueStore();
+  const { issues, updateIssue, addIssue, setIssues } = useIssueStore();
   const { tasks } = useTaskStore();
   const { users, currentUser } = useUserStore() as any;
   const { projects, setProjects } = useProjectStore() as any;
@@ -66,25 +66,25 @@ export default function IssuesPage() {
 
   useEffect(() => {
     const fetchIssues = async () => {
-  try {
-    const res = await fetch("/api/issues", { cache: "no-store" });
-    const data = await res.json();
+      try {
+        const res = await fetch("/api/issues", { cache: "no-store" });
+        const data = await res.json();
 
-    if (Array.isArray(data)) {
-      setIssues(
-        data.map((issue: any) => ({
-          ...issue,
-          id: issue._id,
-        }))
-      );
-    } else {
-      setIssues([]);
-    }
-  } catch (err) {
-    console.error("Issue fetch failed", err);
-    setIssues([]);
-  }
-};
+        if (Array.isArray(data)) {
+          setIssues(
+            data.map((issue: any) => ({
+              ...issue,
+              id: issue._id,
+            }))
+          );
+        } else {
+          setIssues([]);
+        }
+      } catch (err) {
+        console.error("Issue fetch failed", err);
+        setIssues([]);
+      }
+    };
 
     const fetchProjects = async () => {
       try {
@@ -152,48 +152,67 @@ export default function IssuesPage() {
       (task: Task) => String(task.projectId || "") === String(form.projectId)
     );
   }, [form.projectId, myVisibleTasks]);
-const selectedTask = useMemo(() => {
-  return filteredTasksByProject.find(
-    (task: Task) => normalizeId(task) === String(form.taskId)
-  );
-}, [filteredTasksByProject, form.taskId]);
- const uniqueIssues = useMemo(() => {
-  const map = new Map();
 
-  for (const issue of issues || []) {
-    const key = String(issue._id || issue.id || "");
-    if (key && !map.has(key)) {
-      map.set(key, issue);
+  const selectedTask = useMemo(() => {
+    return filteredTasksByProject.find(
+      (task: Task) => normalizeId(task) === String(form.taskId)
+    );
+  }, [filteredTasksByProject, form.taskId]);
+
+  const uniqueIssues = useMemo(() => {
+    const map = new Map();
+
+    for (const issue of issues || []) {
+      const key = String(issue._id || issue.id || "");
+      if (key && !map.has(key)) {
+        map.set(key, issue);
+      }
     }
-  }
 
-  return Array.from(map.values());
-}, [issues]);
+    return Array.from(map.values());
+  }, [issues]);
 
-const openIssues = uniqueIssues.filter((i: any) => i.status === "Open");
-const resolvedIssues = uniqueIssues.filter((i: any) => i.status === "Resolved");
-const sortIssuesByTaskCompletion = (issueList: any[]) => {
-  return [...issueList].sort((a, b) => {
-    const taskA = (tasks || []).find(
-      (t: Task) => normalizeId(t) === String(a.taskId || "")
-    );
-    const taskB = (tasks || []).find(
-      (t: Task) => normalizeId(t) === String(b.taskId || "")
-    );
+  const openIssues = uniqueIssues.filter((i: any) => i.status === "Open");
+  const resolvedIssues = uniqueIssues.filter((i: any) => i.status === "Resolved");
 
-    const aCompleted = taskA?.status === "Complete" ? 1 : 0;
-    const bCompleted = taskB?.status === "Complete" ? 1 : 0;
+  const sortIssuesByTaskCompletion = (issueList: any[]) => {
+    return [...issueList].sort((a, b) => {
+      const taskA = (tasks || []).find(
+        (t: Task) => normalizeId(t) === String(a.taskId || "")
+      );
+      const taskB = (tasks || []).find(
+        (t: Task) => normalizeId(t) === String(b.taskId || "")
+      );
 
-    return aCompleted - bCompleted;
-  });
-};
-const sortedOpenIssues = useMemo(() => {
-  return sortIssuesByTaskCompletion(openIssues);
-}, [openIssues, tasks]);
+      const aCompleted = taskA?.status === "Complete" ? 1 : 0;
+      const bCompleted = taskB?.status === "Complete" ? 1 : 0;
 
-const sortedResolvedIssues = useMemo(() => {
-  return sortIssuesByTaskCompletion(resolvedIssues);
-}, [resolvedIssues, tasks]);
+      return aCompleted - bCompleted;
+    });
+  };
+
+  const openIssuesForActiveTasks = useMemo(() => {
+    return openIssues.filter((issue: any) => {
+      const task = (tasks || []).find(
+        (t: Task) => normalizeId(t) === String(issue.taskId || "")
+      );
+      return task?.status !== "Complete";
+    });
+  }, [openIssues, tasks]);
+
+  const openIssuesForCompletedTasks = useMemo(() => {
+    return openIssues.filter((issue: any) => {
+      const task = (tasks || []).find(
+        (t: Task) => normalizeId(t) === String(issue.taskId || "")
+      );
+      return task?.status === "Complete";
+    });
+  }, [openIssues, tasks]);
+
+  const sortedResolvedIssues = useMemo(() => {
+    return sortIssuesByTaskCompletion(resolvedIssues);
+  }, [resolvedIssues, tasks]);
+
   const resetForm = () => {
     setForm({
       projectId: "",
@@ -218,7 +237,6 @@ const sortedResolvedIssues = useMemo(() => {
         return "bg-green-600/20 text-green-400";
     }
   };
-
 
   const handleCreateIssue = async () => {
     try {
@@ -332,20 +350,20 @@ const sortedResolvedIssues = useMemo(() => {
 
   return (
     <div className="min-h-screen bg-[#0b1220] text-white p-8">
-     <div className="flex justify-between items-center mb-8">
-  <div>
-    <Link
-      href="/dashboard"
-      className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-3"
-    >
-      <span className="text-lg">←</span>
-      <span>Back to Dashboard</span>
-    </Link>
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-3"
+          >
+            <span className="text-lg">←</span>
+            <span>Back to Dashboard</span>
+          </Link>
 
-    <h1 className="text-2xl font-bold">Issues</h1>
-  </div>
+          <h1 className="text-2xl font-bold">Issues</h1>
+        </div>
 
-  <div className="flex gap-3">
+        <div className="flex gap-3">
           <button
             onClick={() => setShowCreateModal(true)}
             className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg"
@@ -369,83 +387,185 @@ const sortedResolvedIssues = useMemo(() => {
           <p className="text-gray-400">No open issues.</p>
         )}
 
-      {sortedOpenIssues.map((issue: any) => {
-          const task = (tasks || []).find(
-            (t: Task) => normalizeId(t) === String(issue.taskId || "")
-          );
-const isTaskCompleted = task?.status === "Complete";
-          const owner = (users || []).find(
-            (u: User) => normalizeId(u) === String(issue.ownerId || "")
-          );
+        {openIssuesForActiveTasks.length > 0 && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-white">
+              Open Issues — Active Tasks
+            </h3>
 
-          const isOverdue =
-            new Date(issue.dueDate) < today && issue.status === "Open";
+            {openIssuesForActiveTasks.map((issue: any) => {
+              const task = (tasks || []).find(
+                (t: Task) => normalizeId(t) === String(issue.taskId || "")
+              );
 
-          return (
-            <div
-              key={issue.id || issue._id}
-              onClick={() => setSelectedIssue(issue)}
-              className={`bg-[#111827] border p-6 rounded-2xl shadow-lg cursor-pointer hover:border-red-500 transition ${
-                isOverdue ? "border-red-600" : "border-gray-800"
-              }`}
-            >
-              <div className="flex justify-between items-center gap-3">
-                <h2 className="text-lg font-bold text-red-400">
-                  {issue.title || "Operational Issue"}
-                </h2>
+              const isTaskCompleted = task?.status === "Complete";
 
-                <div className="flex gap-2">
-                  <span
-                    className={`px-3 py-1 text-xs rounded-full ${getPriorityClasses(
-                      issue.priority || "Medium"
-                    )}`}
-                  >
-                    {issue.priority || "Medium"}
-                  </span>
+              const owner = (users || []).find(
+                (u: User) => normalizeId(u) === String(issue.ownerId || "")
+              );
 
-                  {isOverdue && (
-                    <span className="bg-red-600/20 text-red-400 px-3 py-1 text-xs rounded-full">
-                      OVERDUE
-                    </span>
+              const isOverdue =
+                new Date(issue.dueDate) < today && issue.status === "Open";
+
+              return (
+                <div
+                  key={issue.id || issue._id}
+                  onClick={() => setSelectedIssue(issue)}
+                  className={`bg-[#111827] border p-6 rounded-2xl shadow-lg cursor-pointer hover:border-red-500 transition ${
+                    isOverdue ? "border-red-600" : "border-gray-800"
+                  }`}
+                >
+                  <div className="flex justify-between items-center gap-3">
+                    <h2 className="text-lg font-bold text-red-400">
+                      {issue.title || "Operational Issue"}
+                    </h2>
+
+                    <div className="flex gap-2">
+                      <span
+                        className={`px-3 py-1 text-xs rounded-full ${getPriorityClasses(
+                          issue.priority || "Medium"
+                        )}`}
+                      >
+                        {issue.priority || "Medium"}
+                      </span>
+
+                      {isOverdue && (
+                        <span className="bg-red-600/20 text-red-400 px-3 py-1 text-xs rounded-full">
+                          OVERDUE
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-sm text-gray-400 mt-2">
+                    Task: {task?.title || "-"}
+                  </p>
+
+                  {isTaskCompleted && (
+                    <p className="text-xs text-yellow-400 mt-1 italic">
+                      This task has already been completed.
+                    </p>
                   )}
+
+                  <p className="text-sm text-gray-400">
+                    Owner: {owner?.fullName || "No superior assigned"}
+                  </p>
+
+                  <p className="text-sm text-gray-500 mt-2">
+                    Category:{" "}
+                    {issue.category === "Other"
+                      ? issue.customCategory || "Other"
+                      : issue.category}
+                  </p>
+
+                  <p className="text-sm text-gray-500">
+                    Due: {new Date(issue.dueDate).toLocaleDateString()}
+                  </p>
+
+                  <p className="text-sm mt-3 text-gray-300 whitespace-pre-line">
+                    {issue.description}
+                  </p>
+
+                  <div className="mt-4">
+                    <span className="px-3 py-1 text-xs rounded-full bg-yellow-600/20 text-yellow-400">
+                      {issue.status}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              );
+            })}
+          </div>
+        )}
 
-              <p className="text-sm text-gray-400 mt-2">
-                Task: {task?.title || "-"}
-              </p>
-{isTaskCompleted && (
-  <p className="text-xs text-yellow-400 mt-1 italic">
-    This task has already been completed.
-  </p>
-)}
-              <p className="text-sm text-gray-400">
-                Owner: {owner?.fullName || "No superior assigned"}
-              </p>
+        {openIssuesForCompletedTasks.length > 0 && (
+          <div className="space-y-4 mt-10">
+            <h3 className="text-lg font-semibold text-yellow-400">
+              Open Issues — Completed Tasks
+            </h3>
 
-              <p className="text-sm text-gray-500 mt-2">
-                Category:{" "}
-                {issue.category === "Other"
-                  ? issue.customCategory || "Other"
-                  : issue.category}
-              </p>
+            {openIssuesForCompletedTasks.map((issue: any) => {
+              const task = (tasks || []).find(
+                (t: Task) => normalizeId(t) === String(issue.taskId || "")
+              );
 
-              <p className="text-sm text-gray-500">
-                Due: {new Date(issue.dueDate).toLocaleDateString()}
-              </p>
+              const isTaskCompleted = task?.status === "Complete";
 
-              <p className="text-sm mt-3 text-gray-300 whitespace-pre-line">
-                {issue.description}
-              </p>
+              const owner = (users || []).find(
+                (u: User) => normalizeId(u) === String(issue.ownerId || "")
+              );
 
-              <div className="mt-4">
-                <span className="px-3 py-1 text-xs rounded-full bg-yellow-600/20 text-yellow-400">
-                  {issue.status}
-                </span>
-              </div>
-            </div>
-          );
-        })}
+              const isOverdue =
+                new Date(issue.dueDate) < today && issue.status === "Open";
+
+              return (
+                <div
+                  key={issue.id || issue._id}
+                  onClick={() => setSelectedIssue(issue)}
+                  className={`bg-[#111827] border p-6 rounded-2xl shadow-lg cursor-pointer hover:border-red-500 transition ${
+                    isOverdue ? "border-red-600" : "border-gray-800"
+                  }`}
+                >
+                  <div className="flex justify-between items-center gap-3">
+                    <h2 className="text-lg font-bold text-red-400">
+                      {issue.title || "Operational Issue"}
+                    </h2>
+
+                    <div className="flex gap-2">
+                      <span
+                        className={`px-3 py-1 text-xs rounded-full ${getPriorityClasses(
+                          issue.priority || "Medium"
+                        )}`}
+                      >
+                        {issue.priority || "Medium"}
+                      </span>
+
+                      {isOverdue && (
+                        <span className="bg-red-600/20 text-red-400 px-3 py-1 text-xs rounded-full">
+                          OVERDUE
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-sm text-gray-400 mt-2">
+                    Task: {task?.title || "-"}
+                  </p>
+
+                  {isTaskCompleted && (
+                    <p className="text-xs text-yellow-400 mt-1 italic">
+                      This task has already been completed.
+                    </p>
+                  )}
+
+                  <p className="text-sm text-gray-400">
+                    Owner: {owner?.fullName || "No superior assigned"}
+                  </p>
+
+                  <p className="text-sm text-gray-500 mt-2">
+                    Category:{" "}
+                    {issue.category === "Other"
+                      ? issue.customCategory || "Other"
+                      : issue.category}
+                  </p>
+
+                  <p className="text-sm text-gray-500">
+                    Due: {new Date(issue.dueDate).toLocaleDateString()}
+                  </p>
+
+                  <p className="text-sm mt-3 text-gray-300 whitespace-pre-line">
+                    {issue.description}
+                  </p>
+
+                  <div className="mt-4">
+                    <span className="px-3 py-1 text-xs rounded-full bg-yellow-600/20 text-yellow-400">
+                      {issue.status}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <h2 className="text-xl font-bold mt-14 mb-6 text-gray-400">
@@ -461,7 +581,8 @@ const isTaskCompleted = task?.status === "Complete";
           const task = (tasks || []).find(
             (t: Task) => normalizeId(t) === String(issue.taskId || "")
           );
-const isTaskCompleted = task?.status === "Complete";
+          const isTaskCompleted = task?.status === "Complete";
+
           return (
             <div
               key={issue.id || issue._id}
@@ -475,11 +596,13 @@ const isTaskCompleted = task?.status === "Complete";
               <p className="text-sm text-gray-500 mt-2">
                 Task: {task?.title || "-"}
               </p>
-{isTaskCompleted && (
-  <p className="text-xs text-yellow-400 mt-1 italic">
-    This task has already been completed.
-  </p>
-)}
+
+              {isTaskCompleted && (
+                <p className="text-xs text-yellow-400 mt-1 italic">
+                  This task has already been completed.
+                </p>
+              )}
+
               <p className="text-sm text-gray-500 mt-2">
                 Resolved on{" "}
                 {issue.resolvedAt
@@ -535,34 +658,34 @@ const isTaskCompleted = task?.status === "Complete";
                 </select>
               </div>
 
-           <div>
-  <label className="block text-sm text-gray-400 mb-2">
-    Task
-  </label>
-  <select
-    value={form.taskId}
-    onChange={(e) =>
-      setForm((prev) => ({
-        ...prev,
-        taskId: e.target.value,
-      }))
-    }
-    className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
-  >
-    <option value="">Select task</option>
-    {filteredTasksByProject.map((task: Task) => (
-      <option key={normalizeId(task)} value={normalizeId(task)}>
-        {task.title || "Untitled task"}
-      </option>
-    ))}
-  </select>
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">
+                  Task
+                </label>
+                <select
+                  value={form.taskId}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      taskId: e.target.value,
+                    }))
+                  }
+                  className="w-full bg-[#0b1220] border border-gray-700 rounded-lg px-3 py-2"
+                >
+                  <option value="">Select task</option>
+                  {filteredTasksByProject.map((task: Task) => (
+                    <option key={normalizeId(task)} value={normalizeId(task)}>
+                      {task.title || "Untitled task"}
+                    </option>
+                  ))}
+                </select>
 
-  {selectedTask?.status === "Complete" && (
-    <p className="mt-2 text-sm text-yellow-400">
-      This task is already completed — it is a past task.
-    </p>
-  )}
-</div>
+                {selectedTask?.status === "Complete" && (
+                  <p className="mt-2 text-sm text-yellow-400">
+                    This task is already completed — it is a past task.
+                  </p>
+                )}
+              </div>
 
               <div className="md:col-span-2">
                 <label className="block text-sm text-gray-400 mb-2">
@@ -800,16 +923,19 @@ const isTaskCompleted = task?.status === "Complete";
                       resolvedAt: new Date().toISOString(),
                     });
 
-                    await fetch(`/api/issues/${selectedIssue.id || selectedIssue._id}`, {
-                      method: "PATCH",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({
-                        status: "Resolved",
-                        resolvedAt: new Date().toISOString(),
-                      }),
-                    });
+                    await fetch(
+                      `/api/issues/${selectedIssue.id || selectedIssue._id}`,
+                      {
+                        method: "PATCH",
+                        headers: {
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                          status: "Resolved",
+                          resolvedAt: new Date().toISOString(),
+                        }),
+                      }
+                    );
 
                     setSelectedIssue(null);
                   }}
