@@ -172,7 +172,28 @@ const selectedTask = useMemo(() => {
 
 const openIssues = uniqueIssues.filter((i: any) => i.status === "Open");
 const resolvedIssues = uniqueIssues.filter((i: any) => i.status === "Resolved");
+const sortIssuesByTaskCompletion = (issueList: any[]) => {
+  return [...issueList].sort((a, b) => {
+    const taskA = (tasks || []).find(
+      (t: Task) => normalizeId(t) === String(a.taskId || "")
+    );
+    const taskB = (tasks || []).find(
+      (t: Task) => normalizeId(t) === String(b.taskId || "")
+    );
 
+    const aCompleted = taskA?.status === "Complete" ? 1 : 0;
+    const bCompleted = taskB?.status === "Complete" ? 1 : 0;
+
+    return aCompleted - bCompleted;
+  });
+};
+const sortedOpenIssues = useMemo(() => {
+  return sortIssuesByTaskCompletion(openIssues);
+}, [openIssues, tasks]);
+
+const sortedResolvedIssues = useMemo(() => {
+  return sortIssuesByTaskCompletion(resolvedIssues);
+}, [resolvedIssues, tasks]);
   const resetForm = () => {
     setForm({
       projectId: "",
@@ -197,6 +218,7 @@ const resolvedIssues = uniqueIssues.filter((i: any) => i.status === "Resolved");
         return "bg-green-600/20 text-green-400";
     }
   };
+
 
   const handleCreateIssue = async () => {
     try {
@@ -347,7 +369,7 @@ const resolvedIssues = uniqueIssues.filter((i: any) => i.status === "Resolved");
           <p className="text-gray-400">No open issues.</p>
         )}
 
-        {openIssues.map((issue: any) => {
+      {sortedOpenIssues.map((issue: any) => {
           const task = (tasks || []).find(
             (t: Task) => normalizeId(t) === String(issue.taskId || "")
           );
@@ -435,7 +457,7 @@ const isTaskCompleted = task?.status === "Complete";
           <p className="text-gray-500">No resolved issues yet.</p>
         )}
 
-        {resolvedIssues.map((issue: any) => {
+        {sortedResolvedIssues.map((issue: any) => {
           const task = (tasks || []).find(
             (t: Task) => normalizeId(t) === String(issue.taskId || "")
           );
